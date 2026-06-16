@@ -1,0 +1,35 @@
+[project]
+name = "hdf5_pipeline"
+version = "1.0.0"
+description = "机器人数据流水线：HDF5重命名 → 异常检测 → MP4渲染 → 打标归档"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+
+dependencies = [
+    "h5py>=3.0",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "opencv-python>=4.8",
+    "streamlit>=1.28",
+    "pyarrow>=14.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+hdf5-pipeline = "hdf5_pipeline.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hdf5_pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

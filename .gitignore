@@ -1,0 +1,16 @@
+conda_env/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+test_data/
+.idea/
+.vscode/
+1_renama_test/
+2_data_process/
+create_test_data.py
+debug.py
+render1.py
+step1_render.py
+step3_2.py
+transform.py

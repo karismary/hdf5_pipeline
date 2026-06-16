@@ -1,0 +1,19 @@
+{
+    "paths": {
+        "db_dir": "E:\\hdf5_data_haimian_0515_zuo_108",
+        "raw_dir": "E:\\hdf5_data_haimian_0515_zuo_108",
+        "mp4_dir": "E:\\hdf5_data_haimian_0515_zuo_108\\video",
+        "good_dir": "E:\\hdf5_data_haimian_0515_zuo_108\\bad",
+        "bad_dir": "E:\\hdf5_data_haimian_0515_zuo_108\\bad"
+    },
+    "custom_cols": {
+        "attr_method": {
+            "label": "朝向",
+            "options": [
+                "(未选择)",
+                "垂直",
+                "倾斜"
+            ]
+        }
+    }
+}

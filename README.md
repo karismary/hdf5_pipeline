@@ -1,0 +1,162 @@
+# HDF5 Pipeline — 机器人数据流水线
+
+将原始 HDF5 机器人数据文件，经过**重命名 → 异常检测 → 视频渲染 → 打标归档**四个步骤，变成可用于训练的结构化数据集。
+
+---
+
+## 项目结构
+
+```
+hdf5_pipeline/
+├── __init__.py              # 包版本号
+├── __main__.py              # python -m 入口
+├── core/                    # 共享工具 (所有模块都依赖它)
+│   ├── constants.py         # 关节名称、维度映射、严格度预设
+│   ├── config.py            # config.json 的读写 + 默认值
+│   ├── hdf5_utils.py        # 读 HDF5: 图像、动作、关节
+│   └── video_utils.py       # 读 MP4: 帧信息、首末帧提取
+│
+├── rename/                  # Step 1: 文件重命名
+│   └── engine.py            # episode_NNNNNN 格式统一命名
+│
+├── quality/                 # Step 2: 异常帧检测
+│   ├── detector.py          # 算法核心: mask、DeltaActions、评分
+│   ├── hdf5_checker.py      # 读 HDF5 → 检测 → 导出
+│   └── lerobot_checker.py   # 读 LeRobot Parquet → 检测 → 导出
+│
+├── render/                  # Step 3: 视频渲染
+│   ├── engine.py            # HDF5 → MP4 (OpenCV 合成, 比 matplotlib 快 2-3x)
+│   └── batch_gui.py         # Tkinter 批量转换 GUI
+│
+├── label/                   # Step 4: 打标归档 (TODO)
+├── preview/                 # 单文件预览工具 (TODO)
+└── cli.py                   # 统一命令行入口 (TODO)
+```
+
+---
+
+## 数据流
+
+```
+原始数据 (采集器输出的原始 HDF5)
+    │
+    ▼
+┌─── rename ────────────────────────────────────┐
+│  收集所有子目录的 .hdf5                        │
+│  → 统一命名为 episode_000000 ~ episode_N       │
+│                                                │
+│  函数: collect_hdf5_files() → rename_files()   │
+│  输入: 含子目录的文件夹                         │
+│  输出: rename/ 目录下的 episode_*.hdf5          │
+└────────────────────────────────────────────────┘
+    │
+    ▼
+┌─── quality (异常检测) ─────────────────────────┐
+│  读取 action + state                            │
+│  30维 → 16维投影 (丢弃末端位姿)                 │
+│  DeltaActions → 分位数归一化 → 异常帧评分       │
+│                                                │
+│  两种输入格式:                                  │
+│  • HDF5 格式 → run_hdf5_check()                │
+│  • LeRobot Parquet → run_lerobot_check()        │
+│  输出: outlier_frames.csv + outlier_summary.json │
+└────────────────────────────────────────────────┘
+    │
+    ▼
+┌─── render ─────────────────────────────────────┐
+│  读 HDF5 中的图像 + 动作 + 关节数据             │
+│  曲线图用 matplotlib 画一次 → 存为图片           │
+│  逐帧用 OpenCV 合成 → 写入 MP4                 │
+│                                                │
+│  GUI: 选择文件夹 → 调参数 → 批量转换            │
+│  支持: 多进程并发、断点续传、ETC 预估            │
+└────────────────────────────────────────────────┘
+    │
+    ▼
+┌─── label (TODO) ──────────────────────────────┐
+│  Streamlit 打标系统                             │
+│  MP4 预览 → 打标 good/bad → HDF5 自动归档       │
+│  SQLite 数据库管理                              │
+└────────────────────────────────────────────────┘
+```
+
+---
+
+## 各模块函数速查
+
+### core (共享层)
+
+| 函数 | 输入 | 输出 | 做什么 |
+|---|---|---|---|
+| `load_images_from_hdf5(path)` | HDF5 路径 | `{cam_name: ndarray(T,H,W,3)}` | 读所有摄像头帧 |
+| `load_actions_from_hdf5(path, n)` | HDF5 路径, 帧数 | `ndarray(n, D)` | 读动作数据 |
+| `load_joints_from_hdf5(path, n)` | HDF5 路径, 帧数 | `(left_j, right_j)` | 读左右关节 |
+| `load_raw_30dim(path)` | HDF5 路径 | `(action_30, state_30)` | 读完整 30 维 |
+| `project_30_to_16(x30)` | `ndarray(T,30)` | `ndarray(T,16)` | 丢弃末端位姿 |
+| `get_hdf5_files(folder)` | 目录路径 | `list[Path]` | 递归找 .hdf5 文件 |
+| `extract_first_last_frames(path)` | MP4 路径 | `(first_frame, last_frame)` | 视频首末帧 |
+| `load_config()` | 无 | `{"paths":..., "custom_cols":...}` | 读 config.json |
+
+### rename (重命名)
+
+| 函数 | 输入 | 输出 | 做什么 |
+|---|---|---|---|
+| `collect_hdf5_files(data_dir)` | 含子目录的文件夹 | `list[Path]` | 收集所有 .hdf5，自然排序 |
+| `rename_files(files, output_dir)` | 文件列表 + 目标目录 | `int` | 复制并重命名为 episode_NNNNNN |
+
+### quality (异常检测)
+
+| 函数 | 输入 | 输出 | 做什么 |
+|---|---|---|---|
+| `parse_mask(mask_str)` | `"1,1,0,1"` 字符串 | `np.ndarray(bool)` | 转成布尔掩码 |
+| `apply_delta(action, state, mask)` | 两个 `(T,D)` + `(D,)` | `(T,D) delta` | mask=1 做 action-state |
+| `fit_quantiles(all_delta)` | `(N, D)` | `(q01, q99)` | 各维度的 1%/99% 分位数 |
+| `compute_outliers(episodes, ...)` | 数据 + 参数 | `(rows, summary)` | 完整检测流程 |
+| `run_hdf5_check(data_glob, ...)` | `"./*.hdf5"` + 参数 | `summary dict` | HDF5 专用入口 |
+| `run_lerobot_check(data_glob, ...)` | `"./*.parquet"` + 参数 | `summary dict` | Parquet 专用入口 |
+
+### render (渲染)
+
+| 函数 | 输入 | 输出 | 做什么 |
+|---|---|---|---|
+| `render_mp4(hdf5_path, out_mp4, ...)` | HDF5 → MP4 | `(ok, msg, name)` | 渲染单个文件 |
+| `BatchApp` (类) | Tkinter GUI | 无 (显示窗口) | 批量转换界面 |
+
+---
+
+## 数据维度说明
+
+```
+原始 HDF5 30 维:                                          训练 16 维:
+┌─────────────────────────┐                               ┌──────────────────┐
+│ 0-6   左端位姿 (丢弃)    │     project_30_to_16()         │ 0-6  左关节      │
+│ 7-13  右端位姿 (丢弃)    │  ─────────────────────→        │ 7    左夹爪      │
+│ 14-20 左关节            │                               │ 8-14 右关节      │
+│ 21-27 右关节            │                               │ 15   右夹爪      │
+│ 28    左夹爪            │                               └──────────────────┘
+│ 29    右夹爪            │
+└─────────────────────────┘
+```
+
+7 个关节 (JOINT_NAMES): shoulder_pitch, shoulder_roll, shoulder_yaw, elbow_pitch, wrist_yaw, wrist_pitch, wrist_roll
+
+---
+
+## 开发状态
+
+| 模块 | 状态 | 备注 |
+|---|---|---|
+| core/constants.py | ✅ 完成 | |
+| core/config.py | ✅ 完成 | |
+| core/hdf5_utils.py | ✅ 完成 | |
+| core/video_utils.py | ✅ 完成 | |
+| rename/engine.py | ✅ 完成 | |
+| quality/detector.py | ✅ 完成 | |
+| quality/hdf5_checker.py | ✅ 完成 | |
+| quality/lerobot_checker.py | ✅ 完成 | |
+| render/engine.py | ✅ 完成 | 需加关节曲线合成联动 |
+| render/batch_gui.py | ✅ 完成 | 需加 label 模块切换 |
+| label/database.py | ⏳ 未开始 | |
+| label/app.py | ⏳ 未开始 | |
+| preview/ | ⏳ 未开始 | |
+| cli.py | ⏳ 未开始 | |

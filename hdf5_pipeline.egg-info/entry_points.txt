@@ -1,0 +1,2 @@
+[console_scripts]
+hdf5-pipeline = hdf5_pipeline.cli:main
