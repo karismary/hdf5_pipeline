@@ -282,15 +282,13 @@ def render_mp4(
             if joint_panels:
                 num = len(joint_panels)
                 p_w = panel_w // num
-                for i, img in enumerate(joint_panels):
-                    c = img.copy()
-                    if i == 0 and curve_left_img is not None:
-                        _draw_cursor_line(c, t, n_frames, lx_x0, lx_x1)
-                    if i == 0 and curve_right_img is not None:
-                        _draw_cursor_line(c, t, n_frames, rx_x0, rx_x1)
-                    if i == 1 and curve_right_img is not None:
-                        _draw_cursor_line(c, t, n_frames, rx_x0, rx_x1)
-                    canvas[y:y+row_h, i*p_w:(i+1)*p_w] = c[:row_h, :p_w]
+            for i, img in enumerate(joint_panels):
+                c = img.copy()
+                if img is curve_left_img:
+                    _draw_cursor_line(c, t, n_frames, lx_x0, lx_x1)
+                if img is curve_right_img:
+                    _draw_cursor_line(c, t, n_frames, rx_x0, rx_x1)
+                canvas[y:y+row_h, i*p_w:(i+1)*p_w] = c[:row_h, :p_w]
                 y += row_h
 
 
