@@ -25,7 +25,6 @@ def get_default_config() -> Dict[str, Any]:
     """
     返回一份全新的默认配置副本。
 
-    为什么用 dict(DEFAULT_PATHS) 而不是直接返回它？
     → 防止调用方修改返回值时污染全局常量。
     """
     return {

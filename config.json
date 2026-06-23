@@ -1,19 +1,10 @@
 {
     "paths": {
-        "db_dir": "E:\\hdf5_data_haimian_0515_zuo_108",
-        "raw_dir": "E:\\hdf5_data_haimian_0515_zuo_108",
-        "mp4_dir": "E:\\hdf5_data_haimian_0515_zuo_108\\video",
-        "good_dir": "E:\\hdf5_data_haimian_0515_zuo_108\\bad",
-        "bad_dir": "E:\\hdf5_data_haimian_0515_zuo_108\\bad"
+        "db_dir": "/Users/karis/projects/test/test_data/db/label.db",
+        "raw_dir": "/Users/karis/projects/test/test_data/raw/",
+        "mp4_dir": "/Users/karis/projects/test/test_data/mp4/",
+        "good_dir": "/Users/karis/projects/test/test_data/good_quality/",
+        "bad_dir": "/Users/karis/projects/test/test_data/bad_quality/"
     },
-    "custom_cols": {
-        "attr_method": {
-            "label": "朝向",
-            "options": [
-                "(未选择)",
-                "垂直",
-                "倾斜"
-            ]
-        }
-    }
+    "custom_cols": {}
 }
