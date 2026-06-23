@@ -1,0 +1,3 @@
+- [User Profile](memory/user-profile.md) — 用户背景和学习偏好
+- [Project Overview](memory/project-overview.md) — hdf5_pipeline 项目结构和架构
+- [Project Status](memory/project-status.md) — 各模块完成状态和待办
