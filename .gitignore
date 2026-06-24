@@ -17,3 +17,4 @@ step1_render.py
 step3_2.py
 transform.py
 hdf5_pipeline.egg-info/
+.claude/
