@@ -50,3 +50,22 @@ def get_video_info(mp4_path: str) -> Tuple[int, float]:
     fps = cap.get(cv2.CAP_PROP_FPS)
     cap.release()
     return total_frames, fps
+
+def get_frame(mp4_path: str, n: int):
+    """读取视频指定帧，返回 RGB 格式的 numpy 数组。
+
+    使用 cap.set 跳转到指定帧，只读一帧，不加载全部帧到内存。
+
+    Args:
+        mp4_path (str): MP4 视频文件路径。
+        n (int): 帧索引，从 0 开始。n=0 为首帧。
+
+    Returns:
+        np.ndarray 或 None: RGB 格式的图像数组 (H, W, 3)，读取失败返回 None。
+    """
+    cap = cv2.VideoCapture(str(mp4_path))
+    if n > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, n)
+    ret, frame = cap.read()
+    cap.release()
+    return frame[:, :, ::-1] if ret else None

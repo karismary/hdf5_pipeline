@@ -244,7 +244,7 @@ def render_mp4(
 
 
         # ---- 3. VideoWriter ----
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
         total_h = rows * row_h
         video_writer = cv2.VideoWriter(out_str, fourcc, 15, (panel_w, total_h))
         if not video_writer.isOpened():
@@ -282,17 +282,16 @@ def render_mp4(
             if joint_panels:
                 num = len(joint_panels)
                 p_w = panel_w // num
-            for i, img in enumerate(joint_panels):
-                c = img.copy()
-                if img is curve_left_img:
-                    _draw_cursor_line(c, t, n_frames, lx_x0, lx_x1)
-                if img is curve_right_img:
-                    _draw_cursor_line(c, t, n_frames, rx_x0, rx_x1)
-                canvas[y:y+row_h, i*p_w:(i+1)*p_w] = c[:row_h, :p_w]
+                for i, img in enumerate(joint_panels):
+                    c = img.copy()
+                    if img is curve_left_img:
+                        _draw_cursor_line(c, t, n_frames, lx_x0, lx_x1)
+                    if img is curve_right_img:
+                        _draw_cursor_line(c, t, n_frames, rx_x0, rx_x1)
+                    canvas[y:y+row_h, i*p_w:(i+1)*p_w] = c[:row_h, :p_w]
                 y += row_h
 
-
-            video_writer.write(canvas)
+            video_writer.write(cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
 
         # ---- 6. 清理 ----
         video_writer.release()

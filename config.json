@@ -6,5 +6,24 @@
         "good_dir": "/Users/karis/projects/test/test_data/good_quality/",
         "bad_dir": "/Users/karis/projects/test/test_data/bad_quality/"
     },
-    "custom_cols": {}
+    "custom_cols": {
+        "attr_background": {
+            "label": "背景",
+            "option": [
+                "阳台",
+                "书房",
+                "厨房"
+            ],
+            "type": "text"
+        },
+        "attr_weather": {
+            "label": "天气",
+            "option": [
+                "下雨天",
+                "晴天",
+                "雾霾天"
+            ],
+            "type": "text"
+        }
+    }
 }

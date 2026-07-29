@@ -1,0 +1,103 @@
+"""🧹 质量检测 — 对 HDF5 文件进行异常帧检测。"""
+
+import streamlit as st
+from pathlib import Path
+from hdf5_pipeline.core.utils import pick_folder
+from hdf5_pipeline.quality.hdf5_checker import run_hdf5_check
+from hdf5_pipeline.quality.lerobot_checker import run_lerobot_check
+
+def folder_callback(target_state: str) -> None:
+    """选择文件夹并将路径存入 session_state。
+
+    Args:
+        target_state (str): session_state 的键名。
+    """
+    selected_path = pick_folder()
+    if selected_path:
+        st.session_state[target_state] = selected_path
+
+def show_tab() -> None:
+    """🧹 质量检测标签页主入口。
+
+    支持 HDF5 和 LeRobot Parquet 两种格式的异常帧检测。
+    选择源目录和数据格式，设置严格度，执行检测后显示统计摘要。
+    """
+    st.subheader("数据质量检测")
+    with st.expander("**路径设置**", key = "tabqu_path_set", expanded = True):
+        colqu1_1, colqu1_2 = st.columns([4,1])
+        with colqu1_1:
+            raw_folder = st.text_input("数据目录",
+                                    key = "tabqu_src_dir_ti",
+                                    placeholder = "包含所有数据的文件夹目录（可选.hdf5或.parque格式，在下方选择栏选择数据格式）",
+                                    label_visibility = "collapsed")
+            csv_out_folder = st.text_input("csv文档导出目录",
+                                    key = "tabqu_csv_dir_ti",
+                                    placeholder = "质量评价文档（.csv格式）目录",
+                                    label_visibility = "collapsed",
+                                    help = "不选择则在默认路径下新建csv文档")
+            json_out_folder = st.text_input("json文档导出目录",
+                                    key = "tabqu_json_dir_ti",
+                                    placeholder = "质量评价文档（.json格式）目录",
+                                    label_visibility = "collapsed",
+                                    help = "不选择则在默认路径下新建json文档")
+        
+        with colqu1_2:
+            st.button("📂浏览", key = "tabqu_srcdir_bt", width = "stretch", on_click = folder_callback, args = ("tabqu_src_dir_ti", ))
+            st.button("📂浏览", key = "tabqu_csvdir_bt", width = "stretch", on_click = folder_callback, args = ("tabqu_csv_dir_ti", ))
+            st.button("📂浏览", key = "tabqu_jsondir_bt", width = "stretch", on_click = folder_callback, args = ("tabqu_json_dir_ti", ))
+
+    colqu2_1, colqu2_2 = st.columns([2,3])
+    with colqu2_1:
+        with st.container(key = "tabqu_container2_1", border = True):
+            st.markdown("**检查设置（必选）**")
+            st.selectbox("数据检查严格度", key = "tabqu_strict_sb", options = ["loose", "medium", "strict"])
+            st.selectbox("数据格式",key = "tabqu_format_sb", options = ["HDF5", "LeRobot Parquet"])
+            
+            disabled=not (st.session_state.get("tabqu_strict_sb") and st.session_state.get("tabqu_format_sb"))
+            if st.button("执行检测", key = "tabqu_run_detector", width = "stretch", disabled = disabled):
+                if Path(raw_folder).exists():
+                    src = st.session_state.get("tabqu_src_dir_ti", "")
+                    csv_path = st.session_state.get("tabqu_csv_dir_ti", "")
+                    json_path = st.session_state.get("tabqu_json_dir_ti", "")
+
+                    if csv_path and Path(csv_path).is_dir():
+                        csv_path = str(Path(csv_path) / "outlier_frames.csv")
+                    if json_path and Path(json_path).is_dir():
+                        json_path = str(Path(json_path) / "outlier_summary.json")
+
+                    Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
+                    Path(json_path).parent.mkdir(parents=True, exist_ok=True)
+
+                    strictness = st.session_state.get("tabqu_strict_sb")
+                    file_format = st.session_state.get("tabqu_format_sb")
+
+                    with st.spinner("检测中......"):
+                        if not src:
+                            st.warning("请先选择数据目录")
+                        elif file_format == "HDF5":
+                            st.session_state["q_summary"] = run_hdf5_check(
+                                f"{src}/*.hdf5", csv_path, json_path, strictness=strictness)
+                            st.success("检测完成")
+                        else:
+                            st.session_state["q_summary"] = run_lerobot_check(
+                                f"{src}/*.parquet", csv_path, json_path, strictness=strictness)
+                            st.success("检测完成")
+                
+    with colqu2_2:
+        with st.container(key = "tabqu_container2_2", border = True):
+            if "q_summary" in st.session_state:
+                s = st.session_state["q_summary"]
+                st.metric("扫描文件数", s.get("num_files", 0))
+                st.metric("异常帧数", s.get("num_outliers", 0))
+                st.metric("总帧数", s.get("num_frames", 0))
+
+                st.markdown("**异常最多的维度：**")
+                for d in s.get("top_dims", []):
+                    st.write(f"  维度 {d['dim']}: {d['count']} 帧")
+
+                st.markdown("**异常最多的文件：**")
+                for ep in s.get("top_episodes", [])[:5]:
+                    st.write(f"  episode_{ep['episode']:06d}: {ep['count']} 帧")
+
+            else:
+                st.info("检测结果将在此处显示")

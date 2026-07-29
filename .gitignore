@@ -18,3 +18,11 @@ step3_2.py
 transform.py
 hdf5_pipeline.egg-info/
 .claude/
+.gitignore
+_*.txt
+_*.log
+_*.json
+rename_test/
+test_data_*/
+todo/
+.agents/

@@ -1,19 +1,18 @@
-import os
 import shutil
 from pathlib import Path
-from hdf5_pipeline.core.hdf5_utils import get_hdf5_files
+from hdf5_pipeline.core.hdf5_utils import get_hdf5_files, natural_sort_key
 
 
 def collect_hdf5_files(data_dir: str) -> list[Path]:
-    """扫描所有子目录，返回按自然顺序排序的 HDF5 文件列表。"""
-    files = []
-    for name in os.listdir(data_dir):
-        subdir = os.path.join(data_dir, name)
-        if not os.path.isdir(subdir) or name in ("rename", "__pycache__"):
-            continue
-        files.extend(get_hdf5_files(Path(subdir)))
+    """扫描目录（含所有子目录），返回按自然顺序排序的 HDF5 文件列表。"""
+    files = get_hdf5_files(Path(data_dir))
 
-    files.sort(key=lambda f: natural_sort_key(f.name))
+    for subdir in Path(data_dir).iterdir():
+        if not subdir.is_dir() or subdir.name in ("rename", "__pycache__"):
+            continue
+        files.extend(get_hdf5_files(subdir))
+
+    files = sorted(set(files), key=lambda f: natural_sort_key(f.name))
     return files
 
 
@@ -27,10 +26,9 @@ def rename_files(files: list[Path], output_dir: str) -> int:
     Returns:
         处理的文件数量。
     """
-    os.makedirs(output_dir, exist_ok=True)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
     for i, src in enumerate(files):
-        dst = os.path.join(output_dir, f"episode_{i:06d}.hdf5")
+        dst = out / f"episode_{i:06d}.hdf5"
         shutil.copy2(src, dst)
-        print(f"  {src.name} -> {dst}")
     return len(files)
-

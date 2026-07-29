@@ -68,7 +68,7 @@ def run_hdf5_check(
     """扫描原始 HDF5 文件，导出异常帧列表。
 
     Args:
-        data_glob: 通配符路径
+        data_glob: 通配符路径，如 "./data/*.hdf5"
         out_csv / out_json: 输出路径
         mask: 逗号分隔掩码，None 用默认
         strictness: "loose" / "medium" / "strict"
