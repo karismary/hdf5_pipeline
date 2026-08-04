@@ -1,28 +1,49 @@
+# ===== 环境与缓存 =====
 conda_env/
 __pycache__/
 *.pyc
 .DS_Store
 .env
 *.db
-data_workspace/
-test_data/
 .idea/
 .vscode/
+.agents/
+.claude/
+hdf5_pipeline.egg-info/
+
+# ===== 运行时产物 =====
+_*.txt
+_*.log
+_*.json
+_render_log.txt
+
+# ===== 本地测试数据（不进 git） =====
+test_data/
+test_data_*/
+rename_test/
+data_workspace/
 1_renama_test/
 2_data_process/
+todo/
+
+# ===== 零散调试脚本 =====
 create_test_hdf5.py
 debug_data.py
 render1.py
 step1_render.py
 step3_2.py
 transform.py
-hdf5_pipeline.egg-info/
-.claude/
-.gitignore
-_*.txt
-_*.log
-_*.json
-rename_test/
-test_data_*/
-todo/
-.agents/
+
+# ===== 公司代码（仅本地学习用，禁止提交 / 推送） =====
+openpi_deploy/
+openpi/
+
+# ===== 二进制 / 锁文件 =====
+*.zip
+*.whl
+*.tar.gz
+*.lock
+uv.lock
+
+# 已废弃，本地保留不跟踪
+hdf5_pipeline/render/batch_gui.py

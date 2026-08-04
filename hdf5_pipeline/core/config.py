@@ -17,7 +17,7 @@ DEFAULT_PATHS = {
 
 
 DEFAULT_CUSTOM_COLS: Dict[str, Any] = {}
-DEFAULT_CONFIG_PATH = Path("./config.json")
+DEFAULT_CONFIG_PATH = "./config.json"
 
 
 
@@ -47,12 +47,12 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         {"paths": {...}, "custom_cols": {...}}
     """
     if config_path is None:
-        config_path = DEFAULT_CONFIG_PATH
+        config_path = Path(DEFAULT_CONFIG_PATH)
     config = get_default_config()
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except FileNotFoundError:
         return config
     config["paths"].update(data.get("paths", {}))
     config["custom_cols"].update(data.get("custom_cols", {}))
@@ -63,9 +63,17 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
 # ---- 第四步：save_config ----
 
-def save_config(config_data: Dict[str, Any], config_path: Path = None) -> None:
-    if config_path is None:
-        config_path = DEFAULT_CONFIG_PATH
+def save_config(config_data: Dict[str, Any], config_path: Optional[str] = None) -> None:
+    """将配置字典写入 JSON 文件。
 
-    with open(config_path, "w", encoding="utf-8") as f:
+    Args:
+        config_data (Dict[str, Any]): 要保存的配置，包含 "paths" 和 "custom_cols"。
+        config_path (Optional[str]): 配置文件路径，默认 ./config.json。
+
+    Returns:
+        None。配置写入指定文件。
+    """
+    cfg_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+
+    with open(cfg_path, "w", encoding="utf-8") as f:
         json.dump(config_data, f, ensure_ascii=False, indent=4)

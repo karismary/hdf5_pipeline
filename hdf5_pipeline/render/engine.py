@@ -4,6 +4,7 @@
 import os
 import traceback
 import gc
+import platform
 from pathlib import Path
 
 import cv2
@@ -33,7 +34,8 @@ plt.rcParams['axes.unicode_minus'] = False
 LINE_COLORS = plt.cm.tab20(np.linspace(0, 1, 16))
 JOINT_COLORS = plt.cm.plasma(np.linspace(0, 1, 7))
 
-# ==================== 辅助 ====================
+JOINT_ANGLE_ENVELOPE = (-3.14, 3.14)   # 关节角范围：转动关节收敛于 ±π 弧度
+MIN_ROW_H = 200                        # 面板行高下限：防图像过小时面板塌陷
 
 def _prepare_action16(act: np.ndarray, n_frames: int) -> np.ndarray:
     """
@@ -81,7 +83,7 @@ def _render_action_curves(n_frames, act16, action_on, panel_w, panel_h):
     fig, ax = plt.subplots(figsize=(panel_w / 80, panel_h / 80), dpi=80)
     x_full = np.arange(n_frames)
     ax.set_xlim(0, n_frames - 1)
-    ax.set_ylim(-3.14, 3.14)
+    ax.set_ylim(*JOINT_ANGLE_ENVELOPE)
     ax.set_title("Action 16 Dimensions", fontsize=10, pad=8)
     ax.grid(True, alpha=0.3)
     for i in range(16):
@@ -123,7 +125,7 @@ def _render_joint_curves(n_frames, joint_data, joint_on, title, panel_w, panel_h
     fig, jx = plt.subplots(figsize=(panel_w / 80, panel_h / 80), dpi=80)
     x_full = np.arange(n_frames)
     jx.set_xlim(0, n_frames - 1)
-    jx.set_ylim(-3.14, 3.14)
+    jx.set_ylim(*JOINT_ANGLE_ENVELOPE)
     jx.set_title(title, fontsize=10, pad=8)
     jx.grid(True, alpha=0.3)
     for i in range(7):
@@ -164,7 +166,7 @@ def _draw_cursor_line(img, t, n_frames, x0, x1):
 
     width = x1 - x0
     x = int(round(t / max(n_frames - 1, 1) * width)) + x0
-    cv2.line(img, (x, 0), (x, img.shape[0] - 1), (0, 0, 255), 1)
+    cv2.line(img, (x, 0), (x, img.shape[0] - 1), (255, 0, 0), 1)
 
 # ==================== 主渲染函数 ====================
 
@@ -211,7 +213,9 @@ def render_mp4(
         plt.close("all")
 
         # ---- 1. 加载数据 ----
-        imgs = load_images_from_hdf5(hdf5_str)
+        imgs,fps = load_images_from_hdf5(hdf5_str)
+        if not imgs:
+            return False, "No camera images found", hdf5_path.name
         cams = list(imgs.keys())
         n_frames = min(v.shape[0] for v in imgs.values())
         act = load_actions_from_hdf5(hdf5_str, n_frames)
@@ -219,12 +223,14 @@ def render_mp4(
         act16 = _prepare_action16(act, n_frames)
 
         # ---- 2. 预渲染曲线面板 (只调一次) ----
-        panel_w = 960
+        img_w = sum(img.shape[2] for img in imgs.values())
+        panel_w = min(int(img_w * 1.05), 1920)
+        img_h = max(img.shape[1] for img in imgs.values())
         rows = bool(show_img) + bool(show_act)
         if (any(left_on) and left_j is not None) or (any(right_on) and right_j is not None):
             rows += 1
         rows = max(rows, 1)
-        row_h = max(200, 640 // rows)
+        row_h = max(int(img_h), MIN_ROW_H)
 
         curve_action_img = None
         if show_act:
@@ -244,9 +250,13 @@ def render_mp4(
 
 
         # ---- 3. VideoWriter ----
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')
+        if platform.system() == "Darwin":
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+        else:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
         total_h = rows * row_h
-        video_writer = cv2.VideoWriter(out_str, fourcc, 15, (panel_w, total_h))
+        video_writer = cv2.VideoWriter(out_str, fourcc, fps, (panel_w, total_h))
         if not video_writer.isOpened():
             raise RuntimeError("无法初始化视频写入器")
 

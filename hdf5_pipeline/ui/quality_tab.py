@@ -2,21 +2,10 @@
 
 import streamlit as st
 from pathlib import Path
-from hdf5_pipeline.core.utils import pick_folder
-from hdf5_pipeline.quality.hdf5_checker import run_hdf5_check
-from hdf5_pipeline.quality.lerobot_checker import run_lerobot_check
+from hdf5_pipeline.ui.common import folder_callback
+from hdf5_pipeline.quality.checker import run_quality_check
 
-def folder_callback(target_state: str) -> None:
-    """选择文件夹并将路径存入 session_state。
-
-    Args:
-        target_state (str): session_state 的键名。
-    """
-    selected_path = pick_folder()
-    if selected_path:
-        st.session_state[target_state] = selected_path
-
-def show_tab() -> None:
+def show_tab_quality() -> None:
     """🧹 质量检测标签页主入口。
 
     支持 HDF5 和 LeRobot Parquet 两种格式的异常帧检测。
@@ -75,12 +64,12 @@ def show_tab() -> None:
                         if not src:
                             st.warning("请先选择数据目录")
                         elif file_format == "HDF5":
-                            st.session_state["q_summary"] = run_hdf5_check(
-                                f"{src}/*.hdf5", csv_path, json_path, strictness=strictness)
+                            st.session_state["q_summary"] = run_quality_check(
+                                src, "hdf5", csv_path, json_path, strictness=strictness)
                             st.success("检测完成")
                         else:
-                            st.session_state["q_summary"] = run_lerobot_check(
-                                f"{src}/*.parquet", csv_path, json_path, strictness=strictness)
+                            st.session_state["q_summary"] = run_quality_check(
+                                src, "lerobot", csv_path, json_path, strictness=strictness)
                             st.success("检测完成")
                 
     with colqu2_2:

@@ -2,6 +2,7 @@
 
 import json
 import copy
+import re
 import streamlit as st
 # from streamlit_file_browser import st_file_browser 
 from pathlib import Path
@@ -12,12 +13,12 @@ import pandas as pd
 
 from hdf5_pipeline.core.hdf5_utils import get_sorted_files
 from hdf5_pipeline.core.video_utils import get_video_info,get_frame
-from hdf5_pipeline.label.database import init_db, get_unlabeled, add_label, scan_pairs, get_list, get_records, translate_where, query_records
+from hdf5_pipeline.label.database import init_db, add_label, scan_pairs, get_list, get_records, translate_where, query_records
 from hdf5_pipeline.core.config import load_config, save_config
 from hdf5_pipeline.core.utils import pick_folder
-from hdf5_pipeline.preview.rename_tab import show_tab as show_rename
-from hdf5_pipeline.preview.quality_tab import show_tab as show_quality
-from hdf5_pipeline.preview.render_tab import show_tab as show_render
+from hdf5_pipeline.ui.rename_tab import show_tab_rename
+from hdf5_pipeline.ui.quality_tab import show_tab_quality
+from hdf5_pipeline.ui.render_tab import show_tab_render
 
 # def seclect_folder(path_type):
 #     if st.session_state.get("_browser_for") != path_type :
@@ -36,6 +37,11 @@ from hdf5_pipeline.preview.render_tab import show_tab as show_render
 #         config["paths"][path_type] = f_path
 #         save_config(config)
 #         st.session_state["_browser_for"] = None
+
+TYPE_DICT = {
+    "icon":{"good" : "✅", "bad" : "❌", "pending" : "❎", "unlabeled" : "☑️"},
+    "path":{"good" : "good_dir", "bad" : "bad_dir", "pending" : "raw_dir", "unlabeled" : "raw_dir"}
+}
 
 def seclect_folder(path_type: str) -> None:
     """选择文件夹并保存到 config。
@@ -94,8 +100,12 @@ def qualify_and_move(db_path: str, mp4_name: str, raw_path: str, target_dir: str
             return
     if Path(target_dir).exists():
         shutil.move(raw_path, target_dir)
-        nhdf5_path = Path(target_dir)/Path(raw_path).name
-        add_label(db_path, mp4_name, str(nhdf5_path), quality, None)
+        nhdf5_path = Path(target_dir) / Path(raw_path).name
+        try:
+            add_label(db_path, mp4_name, str(nhdf5_path), quality, None)
+        except Exception:
+            shutil.move(str(nhdf5_path), str(Path(raw_path).parent))
+            raise
         lists = get_list(db_path)
         st.session_state["records"] = lists
         st.session_state["selected"] = get_records(db_path, mp4_name)
@@ -127,34 +137,30 @@ def quality_module(key_name: str, if_session_state: bool = True, session_state: 
     Returns:
         None。
     """
+
+    def button_quality(type):
+        if st.button(f"{TYPE_DICT['icon'].get(type)} {type}", key = f"botton_{type}_{key_name}:{sel[3]}", width = "stretch"):
+            target_dir = TYPE_DICT["path"].get(type)
+            if not if_session_state:
+                st.session_state["_popover_quality_changed"] = True
+            qualify_and_move(
+                config["paths"]["db_dir"],   # 数据库路径
+                sel[3],                       # mp4_name
+                sel[2],                       # hdf5 当前路径
+                str(Path(config["paths"][target_dir])),  # hdf5 目标路径
+                type,                     # 质量标签
+                compare_quality = sel[5]
+            )
+            st.rerun()
+
     sel = st.session_state.get("selected") if if_session_state else target
     colnq1, colnq2 = st.columns(2)
     with colnq1:
-        if st.button(" ✅ ", key = f"botton_good_{key_name}:{sel[3]}", width = "stretch"):
-                if not if_session_state:
-                    st.session_state["_popover_quality_changed"] = True
-                qualify_and_move(
-                    config["paths"]["db_dir"],   # 数据库路径
-                    sel[3],                       # mp4_name
-                    sel[2],                       # hdf5 当前路径
-                    str(Path(config["paths"]["good_dir"])),  # hdf5 目标路径
-                    "good",                     # 质量标签
-                    compare_quality = sel[5]
-                )
-                st.rerun()
+        button_quality("good")
+        button_quality("pending")
     with colnq2:
-        if st.button(" ❌ ", key = f"botton_bad_{key_name}:{sel[3]}", width = "stretch"):
-                if not if_session_state:
-                    st.session_state["_popover_quality_changed"] = True
-                qualify_and_move(
-                    config["paths"]["db_dir"],   # 数据库路径
-                    sel[3],                       # mp4_name
-                    sel[2],                       # hdf5 当前路径
-                    str(Path(config["paths"]["bad_dir"])),  # hdf5 目标路径
-                    "bad",                     # 质量标签
-                    compare_quality = sel[5]
-                )
-                st.rerun()
+        button_quality("bad")
+        button_quality("unlabeled")
 
 def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = True, session_state: str = "selected", target: tuple = None) -> None:
     """渲染属性修改下拉框 + 确认按钮。
@@ -196,8 +202,8 @@ def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = T
         with cola2:
             attr_selected = st.selectbox(
                 f"{attrs['label']}",
-                key=widget_key,
-                options=original_options,
+                key = widget_key,
+                options = original_options,
                 index = current_idx,
                 label_visibility="collapsed"
             )
@@ -230,6 +236,8 @@ st.set_page_config(page_title="HDF5 Labeling",
 
 with open("./hdf5_pipeline/label/style.css") as f:
     st.markdown(f"<style>{f.read()}</style>",unsafe_allow_html=True)
+
+_ENABLE_SELECT_COLUMNS = False
 
 config = load_config("config.json")
 path_dict = {
@@ -276,11 +284,11 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 #————标签页1:文件重命名————
-with tab1: show_rename()
+with tab1: show_tab_rename()
 #————标签页2:质量检测————
-with tab2: show_quality()
+with tab2: show_tab_quality()
 #————标签页3:视频渲染————
-with tab3: show_render()
+with tab3: show_tab_render()
 #————标签页4:打标界面————
 with tab4:
     # 检测数据是否需要刷新
@@ -320,9 +328,9 @@ with tab4:
                 total = len(records)
                 good = sum(1 for r in records if r[5] == "good")
                 bad = sum(1 for r in records if r[5] == "bad")
-                labeled =good + bad
+                labeled = good + bad
                 progress = labeled / total if total > 0 else 0
-                st.progress(progress, text = f"📊 {labeled}/{total} 已完成标记")
+                st.progress(progress, text = f"{labeled}/{total} 已完成标记")
 
                 col1101, col1102 = st.columns(2)
                 with col1101:
@@ -393,17 +401,18 @@ with tab5:
     with col21:
         with st.container(key = "tag2_sql_choose_container", border = True):
             st.markdown("**自定义查询**")
-        #     all_columns = {
-        #         "ID": "id", "HDF5名": "hdf5_name", "HDF5路径": "hdf5_path",
-        #         "MP4名": "mp4_name", "MP4路径": "mp4_path", "质量": "quality",
-        #         "属性": "attr", "创建时间": "created_at", "打标时间": "labeled_at"
-        #     }
-        #     selected_cols = st.multiselect(
-        #         "**SELECT**（筛选目标列）",
-        #         options = list(all_columns.keys()),
-        #         default = None,
-        #         placeholder = "可多选"
-        #     )
+            if _ENABLE_SELECT_COLUMNS:
+                all_columns = {
+                    "ID": "id", "HDF5名": "hdf5_name", "HDF5路径": "hdf5_path",
+                    "MP4名": "mp4_name", "MP4路径": "mp4_path", "质量": "quality",
+                    "属性": "attr", "创建时间": "created_at", "打标时间": "labeled_at"
+                }
+                selected_cols = st.multiselect(
+                    "**SELECT**（筛选目标列）",
+                    options = list(all_columns.keys()),
+                    default = None,
+                    placeholder = "可多选"
+                )
             sql_where = st.text_area("**WHERE**（筛选条件）",
                                     placeholder='输入筛选条件例: quality = "good" \n留空则查询所有数据',
                                     help="""
@@ -427,9 +436,9 @@ with tab5:
             if st.session_state.get("selected_button") is None:
                 st.session_state["selected_button"] = False
             if st.button("执行查询", key="tag2_query", use_container_width=True):
-                try:
+                if _ENABLE_SELECT_COLUMNS:
                     col_names = ", ".join(all_columns[c] for c in selected_cols) if selected_cols else "*"
-                except NameError:
+                else:
                     col_names = "*"
                 where_condition = None
                 if sql_where.strip():
@@ -445,79 +454,79 @@ with tab5:
                 else:
                     st.session_state["tag2_records"] = result
                     st.session_state["selected_button"] = True
-        if st.session_state["selected_button"] and sql_where:
 ##————标签页2-第一列-第二项:批量修改————
-            with st.container(key = "tag2_sql_control_container", border = True):
-                st.markdown("**质量分类批量修改**")
-                col23, col24 = st.columns([4,1])
-                with col23:
-                    batch_quality = st.selectbox("quality_batch", ["good", "bad", "unlabeled"], key = "tag2_batch_qualities", label_visibility = "collapsed")
-                with col24:
-                    if st.button("确认", "tag2_bq_confirm_button", use_container_width = True):
-                        if st.session_state["tag2_records"] and st.session_state["tag2_records"] != []:
-                            count = 0
-                            new_list = []
-                            tag2_selected = st.session_state.get("tag2_records")
-                            for selected_record in tag2_selected:
-                                qualify_and_move(config["paths"]["db_dir"],
-                                                selected_record[3],
-                                                selected_record[2],
-                                                config["paths"][f"{batch_quality}_dir" if batch_quality == "good" or batch_quality == "bad" else "raw_dir"],
-                                                batch_quality,
-                                                False,
-                                                selected_record[5]
-                                                )
-                                count += 1
-                                new_record = get_records(config["paths"]["db_dir"], selected_record[3])
-                                new_list.append(new_record)
-                                new_quality = new_record[5]
-                                st.session_state[f"t2_q_{new_record[0]}"] = (
-                                    ["unlabeled", "good", "bad"].index(new_quality)
-                                    if new_quality in ["unlabeled", "good", "bad"] else 0
-                                )
-                            st.session_state["tag2_records"] = new_list
-                            st.toast(f"已修改 {count} 条记录，点击「获取/刷新数据」查看最新结果")
-                st.markdown("**属性批量修改**")
-                attrs_config = config["custom_cols"]
-                for key, attr in attrs_config.items():
-                    attr_config = attrs_config[key]
-                    col25, col26, col27 = st.columns([1,3,1])
-                    with col25:
-                        st.write(f"{attr.get('label')}:")
-                    with col26:
-                        multi_attrs_select = st.selectbox(
-                            f"multi_attrs_select_{key}",
-                            key = f"attrs_select_of_tab2_col1_{key}",
-                            index = None,
-                            options = attr_config.get("option", []),
-                            label_visibility = "collapsed",
-                            width = "stretch"
-                        )
-                    with col27:
-                        selected_records = st.session_state.get("tag2_records", [])
-                        if st.button(
-                            f"确认",
-                            key = f"attrs_select_button_tab2_col1_{key}",
-                            width = "stretch"
-                        ):
-                            if multi_attrs_select is None:
-                                st.rerun()
-                            else:
-                                new_records = []
-                                for record in selected_records:
-                                    raw_attr = record[6]
-                                    raw_attr_dict = json.loads(raw_attr)
-                                    if key not in raw_attr_dict:
-                                        raw_attr_dict[key] = {"label": attr_config["label"], "option": "未选择", "type": attr_config.get("type", "text")}
-                                    raw_attr_dict[key]["option"] = multi_attrs_select
-                                    add_label(config["paths"]["db_dir"], record[3], attr = raw_attr_dict)
-                                new_records = []
-                                for rec in st.session_state["tag2_records"]:
-                                    latest = get_records(config["paths"]["db_dir"], rec[3])
-                                    new_records.append(latest if latest else rec)
-                                st.session_state["tag2_records"] = new_records
-                                st.toast(f"已批量修改 {len(selected_records)} 条记录的属性")
-                                st.rerun()
+        # with st.container(key = "tag2_sql_control_container", border = True):
+        with st.expander("**批量修改**", False, key = "tab2_sql_control_expander"):
+            st.markdown("**质量分类批量修改**")
+            col23, col24 = st.columns([4,1])
+            with col23:
+                batch_quality = st.selectbox("quality_batch", ["good", "bad", "pending", "unlabeled"], key = "tag2_batch_qualities", label_visibility = "collapsed")
+            with col24:
+                if st.button("确认", "tag2_bq_confirm_button", use_container_width = True):
+                    if st.session_state["tag2_records"] and st.session_state["tag2_records"] != []:
+                        count = 0
+                        new_list = []
+                        tag2_selected = st.session_state.get("tag2_records")
+                        for selected_record in tag2_selected:
+                            qualify_and_move(config["paths"]["db_dir"],
+                                            selected_record[3],
+                                            selected_record[2],
+                                            config["paths"][f"{batch_quality}_dir" if batch_quality == "good" or batch_quality == "bad" else "raw_dir"],
+                                            batch_quality,
+                                            False,
+                                            selected_record[5]
+                                            )
+                            count += 1
+                            new_record = get_records(config["paths"]["db_dir"], selected_record[3])
+                            new_list.append(new_record)
+                            new_quality = new_record[5]
+                            st.session_state[f"t2_q_{new_record[0]}"] = (
+                                ["unlabeled", "good", "bad", "pending"].index(new_quality)
+                                if new_quality in ["unlabeled", "good", "bad", "pending"] else 0
+                            )
+                        st.session_state["tag2_records"] = new_list
+                        st.toast(f"已修改 {count} 条记录，点击「获取/刷新数据」查看最新结果")
+            st.markdown("**属性批量修改**")
+            attrs_config = config["custom_cols"]
+            for key, attr in attrs_config.items():
+                attr_config = attrs_config[key]
+                col25, col26, col27 = st.columns([1,3,1])
+                with col25:
+                    st.write(f"{attr.get('label')}:")
+                with col26:
+                    multi_attrs_select = st.selectbox(
+                        f"multi_attrs_select_{key}",
+                        key = f"attrs_select_of_tab2_col1_{key}",
+                        index = None,
+                        options = attr_config.get("option", []),
+                        label_visibility = "collapsed",
+                        width = "stretch"
+                    )
+                with col27:
+                    selected_records = st.session_state.get("tag2_records", [])
+                    if st.button(
+                        f"确认",
+                        key = f"attrs_select_button_tab2_col1_{key}",
+                        width = "stretch"
+                    ):
+                        if multi_attrs_select is None:
+                            st.rerun()
+                        else:
+                            new_records = []
+                            for record in selected_records:
+                                raw_attr = record[6]
+                                raw_attr_dict = json.loads(raw_attr)
+                                if key not in raw_attr_dict:
+                                    raw_attr_dict[key] = {"label": attr_config["label"], "option": "未选择", "type": attr_config.get("type", "text")}
+                                raw_attr_dict[key]["option"] = multi_attrs_select
+                                add_label(config["paths"]["db_dir"], record[3], attr = raw_attr_dict)
+                            new_records = []
+                            for rec in st.session_state["tag2_records"]:
+                                latest = get_records(config["paths"]["db_dir"], rec[3])
+                                new_records.append(latest if latest else rec)
+                            st.session_state["tag2_records"] = new_records
+                            st.toast(f"已批量修改 {len(selected_records)} 条记录的属性")
+                            st.rerun()
 ##————标签页2-第二列:数据列表显示————
     with col22:
         with st.container(key = "tag2_database_viewer_container", border = True):
@@ -560,7 +569,7 @@ with tab5:
                                     frame = get_frame(rec[4], max(0, n_frames - 1))
                                     if frame is not None: st.image(frame, use_container_width=True)
                         with col_qual:
-                            icon = {"good": "✅ ", "bad": "❌ ", "unlabeled": "⬜ "}.get(rec[5], "")
+                            icon = {"good": "✅ ", "bad": "❌ ", "pending": "❎ ", "unlabeled": "⬜ "}.get(rec[5], "")
                             # st.button(f"{icon}{rec[5]}", key = f"t2_lq_{rec[0]}", disabled = True, width = "stretch")
                             with st.popover(f"{icon}{rec[5]}", key = f"tab2_listqual_{rec[0]}", width = "stretch"):
                                 st.markdown("**质量选择**")

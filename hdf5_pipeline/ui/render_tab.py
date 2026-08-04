@@ -4,24 +4,30 @@ import streamlit as st
 from pathlib import Path
 import os
 import threading
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED, CancelledError
 from multiprocessing import Manager
 from hdf5_pipeline.core.config import load_config
-from hdf5_pipeline.core.utils import pick_folder
-from hdf5_pipeline.core.hdf5_utils import get_sorted_files
+from hdf5_pipeline.ui.common import folder_callback
+from hdf5_pipeline.core.hdf5_utils import get_sorted_files, get_hdf5_frame_count
 from hdf5_pipeline.render.engine import render_mp4
 
-def folder_callback(target_state: str) -> None:
-    """选择文件夹并将路径存入 session_state。
-
-    Args:
-        target_state (str): session_state 的键名，存入选中的路径。
-    """
-    selected_path = pick_folder()
-    if selected_path:
-        st.session_state[target_state] = selected_path
-
 RENDER_LOG = Path("./_render_log.txt")
+
+CHECK_INTERVAL = 5
+PER_FRAME_BUDGET = 0.3
+BASE_OVERHEAD = 60
+MIN_TIMEOUT = 60
+MAX_TIMEOUT = 3600
+
+def _render_deadlines(h5_file, format):
+    n = get_hdf5_frame_count(h5_file, format)
+    if n is None:
+        budget = MAX_TIMEOUT
+    else:
+        budget = n * PER_FRAME_BUDGET + BASE_OVERHEAD
+    budget = min(max(budget, MIN_TIMEOUT), MAX_TIMEOUT)
+    return time.time() + budget
 
 @st.fragment(run_every=2)
 def render_status() -> None:
@@ -87,7 +93,7 @@ def render_all(files, src, out, show_image, show_action, action_on, left_on, rig
     skip = 0
 
     with ProcessPoolExecutor(max_workers = n_workers) as executor:
-        futures = {}
+        pending = {}
         for fname in files:
             if stop_event.is_set():
                 executor.shutdown(wait = False, cancel_futures = True)
@@ -98,22 +104,41 @@ def render_all(files, src, out, show_image, show_action, action_on, left_on, rig
                 write_log(f"跳过：{fname}\n")
                 skip += 1
                 continue
+            deadline = _render_deadlines(Path(src)/fname, "hdf5")
             future = executor.submit(render_mp4, Path(src)/fname, Path(mp4),
                                     show_image, show_action, action_on, left_on, right_on, stop_event)
-            futures[future] = fname
-        for future_in in as_completed(futures):
+            pending[future] = (fname, deadline)
+        while pending:
             if stop_event.is_set():
                 executor.shutdown(wait=False, cancel_futures=True)
                 write_log("终止\n")
                 break
-            try:
-                ok,msg,_ = future_in.result()
-                write_log(f"成功：{futures.get(future_in)}\n")
-                success += 1
-            except Exception as e:
-                write_log(f"失败：{futures.get(future_in)}\n")
+            done, not_done = wait(pending, CHECK_INTERVAL, FIRST_COMPLETED)
+            for future in done:
+                fname, _ = pending.pop(future)
+                try:
+                    ok, msg, _ = future.result()
+                    if ok:
+                        write_log(f"成功：{fname}\n")
+                        success += 1
+                    else:
+                        write_log(f"失败：{fname} | {msg}\n")
+                        fail += 1
+                except CancelledError:
+                    pass
+                except Exception:
+                    write_log(f"失败：{fname}\n")
+                    fail += 1
 
-def show_tab() -> None:
+            now = time.time()
+            for future in not_done:
+                fname, deadline = pending[future]
+                if now > deadline:
+                    pending.pop(future)
+                    write_log(f"超时：{fname}\n")
+                    fail += 1
+
+def show_tab_render() -> None:
     """🎬 视频渲染标签页主入口。
 
     提供路径选择、渲染选项配置、多进程并发渲染和日志监控。
@@ -183,7 +208,7 @@ def show_tab() -> None:
                     if not src or not out:
                         st.warning("请选择正确的数据文件夹")
                     else:
-                        files = get_sorted_files(Path(src), [".hdf5", ".h5"], 1)
+                        files = get_sorted_files(src, [".hdf5", ".h5"], 1)
                         file_count = len(files)
                         st.session_state.update(_render_total = file_count)
                         if not files:

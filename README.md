@@ -38,15 +38,15 @@ hdf5_pipeline/
 │   └── lerobot_checker.py      # LeRobot Parquet 格式数据入口
 │
 ├── render/                     # Step 3: 视频渲染
-│   ├── engine.py               # HDF5 → MP4 多面板合成渲染
-│   └── batch_gui.py            # Tkinter 批量转换 GUI
+│   └── engine.py               # HDF5 → MP4 多面板合成渲染
 │
 ├── label/                      # Step 4: 打标归档
 │   ├── database.py             # SQLite 数据库操作（init/add/get/scan）
 │   ├── app.py                  # Streamlit 统一操作界面（6 标签页）
 │   └── style.css               # 自定义样式
 │
-├── preview/                    # 各步骤 Streamlit 界面模块
+├── ui/                         # 各步骤 Streamlit 界面模块（可独立启动）
+│   ├── module_app.py           # 通用入口：streamlit run module_app.py -- --module X
 │   ├── rename_tab.py           # 📁 文件重命名标签页
 │   ├── quality_tab.py          # 🧹 质量检测标签页
 │   └── render_tab.py           # 🎬 视频渲染标签页
@@ -251,10 +251,13 @@ HDF5 原始 30 维:                           训练 16 维:
 streamlit run hdf5_pipeline/label/app.py
 ```
 
-### Tkinter 批量渲染 GUI
+### 独立模块页面
 
 ```bash
-python -c "from hdf5_pipeline.render.batch_gui import BatchApp; import multiprocessing; manager=multiprocessing.Manager(); BatchApp(tk.Tk(), manager.Event()).run()"
+# 单独启动某个界面模块（默认 render）
+streamlit run hdf5_pipeline/ui/module_app.py -- --module quality
+# 或通过 CLI
+hdf5-pipeline ui --module quality
 ```
 
 ### 编程调用
@@ -292,12 +295,12 @@ add_label("label.db", "episode_000000.mp4", quality="good", attr='{"背景": "�
 | rename/engine.py | ✅ 完成 | 统一命名，当前仅 HDF5 |
 | quality/ | ✅ 完成 | 双格式支持（HDF5 / LeRobot Parquet） |
 | render/engine.py | ✅ 完成 | 多面板合成 + 多进程同步 |
-| render/batch_gui.py | ✅ 完成 | Tkinter 批量 GUI |
 | label/database.py | ✅ 完成 | SQLite 封装 |
 | label/app.py | ✅ 完成 | 6 标签页 Streamlit 界面 |
-| preview/rename_tab.py | ✅ 完成 | |
-| preview/quality_tab.py | ✅ 完成 | |
-| preview/render_tab.py | ✅ 完成 | 多进程并发 + @fragment 日志 |
+| ui/module_app.py | ✅ 完成 | 独立模块入口（--module 切换） |
+| ui/rename_tab.py | ✅ 完成 | |
+| ui/quality_tab.py | ✅ 完成 | |
+| ui/render_tab.py | ✅ 完成 | 多进程并发 + @fragment 日志 + 超时保护 |
 | cli.py | ⏳ 未开始 | 统一命令行入口 |
 | 单元测试 | ⏳ 未开始 | pytest 已配置 |
 

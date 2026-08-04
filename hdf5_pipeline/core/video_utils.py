@@ -1,10 +1,10 @@
 import os
-from typing import Optional, Tuple
+from typing import Tuple, Optional
 
 import cv2
 import numpy as np
 
-def extract_first_last_frames(mp4_path):
+def extract_first_last_frames(mp4_path) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """
     提取视频文件的首帧和尾帧，并将颜色空间从默认的 BGR 转换为 RGB。
 
@@ -46,12 +46,14 @@ def get_video_info(mp4_path: str) -> Tuple[int, float]:
         (total_frames, fps) — 总帧数和帧率。
     """
     cap = cv2.VideoCapture(str(mp4_path))
+    if not cap.isOpened():
+        return 0, 0.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     cap.release()
     return total_frames, fps
 
-def get_frame(mp4_path: str, n: int):
+def get_frame(mp4_path: str, n: int) -> Optional[np.ndarray]:
     """读取视频指定帧，返回 RGB 格式的 numpy 数组。
 
     使用 cap.set 跳转到指定帧，只读一帧，不加载全部帧到内存。
@@ -64,6 +66,8 @@ def get_frame(mp4_path: str, n: int):
         np.ndarray 或 None: RGB 格式的图像数组 (H, W, 3)，读取失败返回 None。
     """
     cap = cv2.VideoCapture(str(mp4_path))
+    if not cap.isOpened():
+        return None
     if n > 0:
         cap.set(cv2.CAP_PROP_POS_FRAMES, n)
     ret, frame = cap.read()

@@ -3,33 +3,42 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import h5py
 import numpy as np
+import pyarrow.parquet as pq
 import re
 
 os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 
+FORMAT_DICT = {
+    "lerobot":".parquet",
+    "hdf5":".hdf5"
+}
 
 def natural_sort_key(name: str) -> list:
     """按数字大小排序，保证 2 在 10 前面。"""
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
-def get_hdf5_files(folder: Path) -> List[Path]:
-    """递归收集目录下所有 HDF5 文件，按文件名普通排序后返回。
+def get_hdf5_files(folder: str, format: str = "hdf5") -> List[Path]:
+    """递归收集目录下所有指定格式文件，按文件名普通排序后返回。
 
     使用 rglob 搜索，会递归所有子目录。
-    同时匹配 .h5 和 .hdf5 两种后缀。
+    支持通过 format 参数选择数据格式（对应 FORMAT_DICT）。
     注意：默认 sorted() 为字典序排序（episode_10 在 episode_2 前面），
     如需自然排序请自行调用 sorted(files, key=lambda p: natural_sort_key(p.name))。
 
     Args:
         folder (Path): 要搜索的根目录路径。
+        format (str): 数据格式关键字，如 "hdf5" → "*.hdf5"、"lerobot" → "*.parquet"。
+            不在 FORMAT_DICT 中时回退为 ".hdf5"。
 
     Returns:
-        List[Path]: 按文件名字典序排序的 HDF5 文件路径列表。
+        List[Path]: 按文件名字典序排序的匹配文件路径列表。
     """
+    file_type = FORMAT_DICT.get(format, ".hdf5")
+    dir_path = Path(folder)
 
-    return sorted([f for f in folder.rglob("*.h5")] + [f for f in folder.rglob("*.hdf5")])
+    return sorted([f for f in dir_path.rglob(f"*{file_type}")])
 
-def get_sorted_files(folder: Path, file_type: list, return_type: int) -> List[Path]:
+def get_sorted_files(folder: str, file_type: list, return_type: int) -> List[Path]:
     """递归收集目录下所有指定类型文件，按文件名自然排序后返回。
 
     使用 rglob 搜索，会递归所有子目录。
@@ -47,22 +56,52 @@ def get_sorted_files(folder: Path, file_type: list, return_type: int) -> List[Pa
             当 return_type=1 时返回文件名字符串列表。
             两种情况下均按自然排序（保证 "episode_2" 在 "episode_10" 前面）。
     """
+    dir_path = Path(folder)
     if len(file_type) == 1:
         if return_type == 0:
-            return sorted([f for f in folder.rglob(f"*{file_type[0]}")], 
+            return sorted([f for f in dir_path.rglob(f"*{file_type[0]}")], 
                         key = lambda p: natural_sort_key(p.name))
         else:
-            return sorted([f.name for f in folder.rglob(f"*{file_type[0]}")], 
+            return sorted([f.name for f in dir_path.rglob(f"*{file_type[0]}")], 
                 key = lambda p: natural_sort_key(p))
     else:
         all_files = []
         for ext in file_type:
-            all_files.extend(folder.rglob(f"*{ext}"))
+            all_files.extend(dir_path.rglob(f"*{ext}"))
         if return_type == 0:
             return sorted(all_files, key=lambda p: natural_sort_key(p.name))
         else:
             return sorted([f.name for f in all_files], key=lambda p: natural_sort_key(p))
 
+def get_hdf5_frame_count(h5_file: str, format: str = "hdf5"):
+    """获取数据文件的帧数，兼容 HDF5 与 LeRobot Parquet 两种格式。
+
+    Args:
+        h5_file (str): 数据文件路径（HDF5 或 Parquet）。
+        format (str): 数据格式关键字，如 "hdf5" → 读取 HDF5、"lerobot" → 读取 Parquet。
+
+    Returns:
+        int 或 None: 帧数；文件不存在或无法读取时返回 None。
+    """
+    h5_path = Path(h5_file)
+    if not h5_path.exists():
+        return None
+    try:
+        if format == "lerobot":
+            return pq.ParquetFile(h5_path).metadata.num_rows
+        with h5py.File(h5_path, "r") as f:
+            if "observations/pixels" in f:
+                pix = "observations/pixels"
+            elif "observation/pixels" in f:
+                pix = "observation/pixels"
+            else:
+                pix = "pixels"
+            cameras = list(f[pix].keys())
+            if not cameras:
+                return None
+            return min(f[f"{pix}/{c}"].shape[0] for c in cameras)
+    except Exception:
+        return None
 
 def normalize_image_array(arr: np.ndarray) -> np.ndarray:
     """将各种形状/类型的图像数组统一为 (T, H, W, 3) uint8。
@@ -108,14 +147,20 @@ def load_images_from_hdf5(path: str) -> Dict[str, np.ndarray]:
     """
 
     with h5py.File(path, "r") as root:
+        ts = root["timestamps"][:] if "timestamp" in root else None
         pix_group = "observations/pixels" if "observations/pixels" in root else "pixels"
         cams = list(root[pix_group].keys())
         imgs = {}
         for c in cams:
             raw_array = root[f"{pix_group}/{c}"][:]
             imgs[c] = normalize_image_array(raw_array)
+        if ts is not None and len(ts) > 1:
+            dt = ts[1] - ts[0]
+            fps = int(round(1.0 / dt)) if dt > 0 else 15
+        else:
+            fps = 15
 
-    return imgs
+    return imgs, fps
 
 
 def load_actions_from_hdf5(path: str, n_frames: int) -> np.ndarray:

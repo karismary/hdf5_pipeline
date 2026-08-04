@@ -2,20 +2,10 @@
 
 import streamlit as st
 from pathlib import Path
-from hdf5_pipeline.core.utils import pick_folder
+from hdf5_pipeline.ui.common import folder_callback
 from hdf5_pipeline.rename.engine import collect_hdf5_files, rename_files
 
-def folder_callback(target_state: str) -> None:
-    """选择文件夹并将路径存入 session_state。
-
-    Args:
-        target_state (str): session_state 的键名。
-    """
-    selected_path = pick_folder()
-    if selected_path:
-        st.session_state[target_state] = selected_path
-
-def show_tab() -> None:
+def show_tab_rename() -> None:
     """📁 文件重命名标签页主入口。
 
     扫描源目录下的所有 HDF5 文件，统一重命名为 episode_NNNNNN 格式

@@ -1,5 +1,3 @@
-"""异常检测核心算法：掩码解析、DeltaActions、分位数拟合、评分、导出。"""
-
 import csv
 import json
 import re
@@ -9,8 +7,7 @@ import numpy as np
 
 from hdf5_pipeline.core.constants import STRICTNESS_PRESETS
 
-
-# ==================== 基础工具 ====================
+MAX_QUANTILE_SAMPLES = 200_000
 
 def parse_mask(mask_str: str) -> np.ndarray:
     """将逗号分隔的 1/0 字符串转为布尔数组。
@@ -31,7 +28,6 @@ def parse_mask(mask_str: str) -> np.ndarray:
         else:
             raise ValueError(f'Invalid mask value: {v}')
     return np.array(out, dtype=bool)
-
 
 def apply_delta(action: np.ndarray, state: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """计算 DeltaActions。
@@ -81,9 +77,6 @@ def episode_id_from_path(path: str) -> int:
     m = re.search(r"episode_(\d+)\.(parquet|hdf5|h5)$", path)
     return int(m.group(1)) if m else -1
 
-
-# ==================== 核心评分 ====================
-
 def compute_outliers(
     episodes: list,
     mask: np.ndarray,
@@ -118,8 +111,10 @@ def compute_outliers(
         min_denom = p["min_denom"]
 
     # 2. 全量 DeltaActions → 分位数
+    n_total = sum(len(a) for _, a, _, _ in episodes)
+    stride = max(1,n_total // MAX_QUANTILE_SAMPLES)
     all_delta = np.concatenate(
-        [apply_delta(a, s, mask) for _, a, s, _ in episodes], axis=0
+        [apply_delta(a, s, mask)[::stride] for _, a, s, _ in episodes], axis=0
     )
     q01, q99 = fit_quantiles(all_delta)
     denom = q99 - q01
@@ -193,23 +188,36 @@ def compute_outliers(
 
     return outlier_rows, summary
 
-
-# ==================== 导出 ====================
-
 def export_results(outlier_rows: list, summary: dict, out_csv: str, out_json: str) -> None:
     """将异常帧列表写入 CSV，统计摘要写入 JSON。
 
+    自动识别 out_csv / out_json 是否为目录：
+    - 是目录 → 在目录下创建默认文件名（outlier_doc.csv / summary_doc.json）
+    - 是文件路径 → 直接使用
+
     Args:
-        outlier_rows: compute_outliers 返回的第一项
-        summary: compute_outliers 返回的第二项
-        out_csv: CSV 输出路径
-        out_json: JSON 输出路径
+        outlier_rows (list): compute_outliers 返回的异常帧记录列表。
+        summary (dict): compute_outliers 返回的统计摘要字典。
+        out_csv (str): CSV 输出路径或目录路径。
+        out_json (str): JSON 输出路径或目录路径。
+
+    Returns:
+        None。结果直接写入指定文件。
     """
+
+    if Path(out_csv).is_dir():
+        saved_csv = Path(out_csv)/"outlier_doc.csv"
+    else:
+        saved_csv = out_csv
     if outlier_rows:
-        with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        with open(saved_csv, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=list(outlier_rows[0].keys()))
             writer.writeheader()
             writer.writerows(outlier_rows)
 
-    with open(out_json, "w", encoding="utf-8") as f:
+    if Path(out_json).is_dir():
+        saved_json = Path(out_json)/"summary_doc.json"
+    else:
+        saved_json = out_json
+    with open(saved_json, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
