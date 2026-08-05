@@ -8,7 +8,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED, CancelledError
 from multiprocessing import Manager
 from hdf5_pipeline.core.config import load_config
-from hdf5_pipeline.ui.common import folder_callback
+from hdf5_pipeline.ui.common import folder_callback, KEY_RENDER
 from hdf5_pipeline.core.hdf5_utils import get_sorted_files, get_hdf5_frame_count
 from hdf5_pipeline.render.engine import render_mp4
 
@@ -36,12 +36,12 @@ def render_status() -> None:
     显示渲染日志、进度条和调试信息。
     渲染完成后自动停止刷新。
     """
-    with st.container(key="tabrd_log", border=True):
+    with st.container(key=f"{KEY_RENDER}_log", border=True):
         col_t, col_d = st.columns([3, 1])
         with col_t:
             st.markdown("**📋 渲染日志**")
         with col_d:
-            st.checkbox("调试", key="rd_debug", value=False)
+            st.checkbox("调试", key=f"{KEY_RENDER}_debug", value=False)
 
         if RENDER_LOG.exists():
             raw = RENDER_LOG.read_text().strip()
@@ -49,9 +49,9 @@ def render_status() -> None:
         else:
             st.info("日志文件不存在，可能还未开始渲染")
 
-        if st.session_state.get("rd_debug"):
+        if st.session_state.get(f"{KEY_RENDER}_debug"):
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("并发数", st.session_state.get("tabrd_sub_progress_cb", 2))
+            c1.metric("并发数", st.session_state.get(f"{KEY_RENDER}_sub_progress_cb", 2))
             c2.metric("总文件", st.session_state.get("_render_total", 0))
             c3.metric("已完成", done if st.session_state.get("_rendering") else "-")
             c4.metric("日志行", len(raw.split(chr(10))) if RENDER_LOG.exists() else 0)
@@ -145,66 +145,66 @@ def show_tab_render() -> None:
     """
     config = load_config()
     st.subheader("视频渲染")
-    with st.expander("**路径设置**", key = "tabrd_path_set", expanded = True):
+    with st.expander("**路径设置**", key = f"{KEY_RENDER}_path_set", expanded = True):
         colqu1_1, colqu1_2 = st.columns([4,1])
         with colqu1_1:
-            st.text_input("数据目录（HDF5）", key = "tabrd_src_dir_ti", placeholder = "hdf5原始数据的文件夹目录", label_visibility = "collapsed")
-            st.text_input("视频导出目录（MP4）", key = "tabrd_mp4_dir_ti", placeholder = "导出hdf5转换mp4视频文件的文件夹目录", label_visibility = "collapsed")
+            st.text_input("数据目录（HDF5）", key = f"{KEY_RENDER}_src_dir_ti", placeholder = "hdf5原始数据的文件夹目录", label_visibility = "collapsed")
+            st.text_input("视频导出目录（MP4）", key = f"{KEY_RENDER}_mp4_dir_ti", placeholder = "导出hdf5转换mp4视频文件的文件夹目录", label_visibility = "collapsed")
         
         with colqu1_2:
-            st.button("📂浏览", key = "tabrd_src_dir_bt", width = "stretch", on_click = folder_callback, args = ("tabrd_src_dir_ti", ))
-            st.button("📂浏览", key = "tabrd_mp4_dir_bt", width = "stretch", on_click = folder_callback, args = ("tabrd_mp4_dir_ti", ))
+            st.button("📂浏览", key = f"{KEY_RENDER}_src_dir_bt", width = "stretch", on_click = folder_callback, args = (f"{KEY_RENDER}_src_dir_ti", ))
+            st.button("📂浏览", key = f"{KEY_RENDER}_mp4_dir_bt", width = "stretch", on_click = folder_callback, args = (f"{KEY_RENDER}_mp4_dir_ti", ))
 
     colrd2_1, colrd2_2 = st.columns([1,1])
     with colrd2_1:
-        with st.container(key = "tabrd_container1", border = True):
+        with st.container(key = f"{KEY_RENDER}_container1", border = True):
             st.markdown("**图像渲染选项**")
             colrd2_1_1, colrd2_1_2= st.columns(2)
             with colrd2_1_1:
-                st.checkbox("显示顶端图像", key = "tabrd_show_image_cb", value = True)
+                st.checkbox("显示顶端图像", key = f"{KEY_RENDER}_show_image_cb", value = True)
             with colrd2_1_2:
-                st.checkbox("显示动作曲线", key = "tabrd_show_action_cb", value = True)
+                st.checkbox("显示动作曲线", key = f"{KEY_RENDER}_show_action_cb", value = True)
 
-            with st.expander("动作维度（16维）", key = "tabrd_action_dim_ep", expanded = False):
+            with st.expander("动作维度（16维）", key = f"{KEY_RENDER}_action_dim_ep", expanded = False):
                 st.session_state["action_on"] = []
                 action_cols = st.columns(8)
                 for i in range(16):
                     with action_cols[i % 8]:
-                        st.session_state["action_on"].append(st.checkbox(f"a{i}", key = f"action_check_a{i}", value = True))
+                        st.session_state["action_on"].append(st.checkbox(f"a{i}", key = f"{KEY_RENDER}_action_check_a{i}", value = True))
 
             left_right_dict = {0:"should", 1:"should", 2:"should", 3:"elbow_", 4:"wrist_", 5:"wrist_", 6:"wrist_", }
 
-            with st.expander("左机械臂关节（7）", key = "tabrd_left_dim_ep", expanded = False):
+            with st.expander("左机械臂关节（7）", key = f"{KEY_RENDER}_left_dim_ep", expanded = False):
                 st.session_state.update(left_on = [])
                 left_cols = st.columns(7)
                 for i in range(7):
                     with left_cols[i]:
-                        st.session_state["left_on"].append(st.checkbox(left_right_dict.get(i), key = f"lefton_check_a{i}", value = True))
+                        st.session_state["left_on"].append(st.checkbox(left_right_dict.get(i), key = f"{KEY_RENDER}_lefton_check_a{i}", value = True))
 
-            with st.expander("右机械臂关节（7）", key = "tabrd_right_dim_ep", expanded = False):
+            with st.expander("右机械臂关节（7）", key = f"{KEY_RENDER}_right_dim_ep", expanded = False):
                 st.session_state.update(right_on = [])
                 right_cols = st.columns(7)
                 for i in range(7):
                     with right_cols[i]:
-                        st.session_state["right_on"].append(st.checkbox(left_right_dict.get(i), key = f"righton_check_a{i}", value = True))
+                        st.session_state["right_on"].append(st.checkbox(left_right_dict.get(i), key = f"{KEY_RENDER}_righton_check_a{i}", value = True))
 
     with colrd2_2:
-        with st.container(key = "tabrd_container2", border = True):
+        with st.container(key = f"{KEY_RENDER}_container2", border = True):
             st.markdown("**视频输出选项**")
             colrd3_1, colrd3_2 = st.columns(2, vertical_alignment = "center")
             with colrd3_1:
-                st.number_input("并发数", key = "tabrd_sub_progress_cb", min_value = 1, max_value = os.cpu_count(), value = 2, help = "同时渲染的文件数量，建议不超过 CPU 核心数")
+                st.number_input("并发数", key = f"{KEY_RENDER}_sub_progress_cb", min_value = 1, max_value = os.cpu_count(), value = 2, help = "同时渲染的文件数量，建议不超过 CPU 核心数")
             with colrd3_2:
-                st.checkbox("跳过已生成的视频(断点续传)", key = "tabrd_skip_exist_cb", value = True)
+                st.checkbox("跳过已生成的视频(断点续传)", key = f"{KEY_RENDER}_skip_exist_cb", value = True)
 
-        with st.container(key = "tabrd_container3", border = True):
+        with st.container(key = f"{KEY_RENDER}_container3", border = True):
             st.markdown("**视频输出**")
             colrd4_1, colrd4_2 = st.columns(2)
             with colrd4_1:
-                if st.button("开始转换", key = "tabrd_start_transfer_bt", width = "stretch"):
+                if st.button("开始转换", key = f"{KEY_RENDER}_start_transfer_bt", width = "stretch"):
                     st.session_state.update(is_aborted = False)
-                    src = st.session_state.get("tabrd_src_dir_ti")
-                    out = st.session_state.get("tabrd_mp4_dir_ti")
+                    src = st.session_state.get(f"{KEY_RENDER}_src_dir_ti")
+                    out = st.session_state.get(f"{KEY_RENDER}_mp4_dir_ti")
                     if not src or not out:
                         st.warning("请选择正确的数据文件夹")
                     else:
@@ -224,21 +224,21 @@ def show_tab_render() -> None:
                                     files,
                                     src,
                                     out,
-                                    st.session_state.get("tabrd_show_image_cb", True),
-                                    st.session_state.get("tabrd_show_action_cb", True),
+                                    st.session_state.get(f"{KEY_RENDER}_show_image_cb", True),
+                                    st.session_state.get(f"{KEY_RENDER}_show_action_cb", True),
                                     st.session_state.get("action_on", [True] * 16),
                                     st.session_state.get("left_on", [True] * 7),
                                     st.session_state.get("right_on", [True] * 7),
-                                    st.session_state.get("tabrd_skip_exist_cb", True),
+                                    st.session_state.get(f"{KEY_RENDER}_skip_exist_cb", True),
                                     stop_ev,
-                                    st.session_state.get("tabrd_sub_progress_cb", 2)
+                                    st.session_state.get(f"{KEY_RENDER}_sub_progress_cb", 2)
                                 ),
                                 daemon = True
                             ).start()
                             st.toast(f"开始渲染，共{file_count}个文件")
 
             with colrd4_2:
-                if st.button("终止转换", key = "tabrd_abort_transfer_bt", width = "stretch"):
+                if st.button("终止转换", key = f"{KEY_RENDER}_abort_transfer_bt", width = "stretch"):
                     ev = st.session_state.get("_render_stop")
                     if ev:
                         ev.set()

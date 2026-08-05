@@ -1,5 +1,3 @@
-#该文件大部分为古法手搓，请放心食用
-
 import json
 import copy
 import re
@@ -19,8 +17,9 @@ from hdf5_pipeline.core.utils import pick_folder
 from hdf5_pipeline.ui.rename_tab import show_tab_rename
 from hdf5_pipeline.ui.quality_tab import show_tab_quality
 from hdf5_pipeline.ui.render_tab import show_tab_render
+from hdf5_pipeline.ui.common import KEY_LABEL, KEY_OVERVIEW, KEY_CONFIG
 
-# def seclect_folder(path_type):
+# def select_folder(path_type):
 #     if st.session_state.get("_browser_for") != path_type :
 #         return
 #     folder = st_file_browser(
@@ -43,7 +42,7 @@ TYPE_DICT = {
     "path":{"good" : "good_dir", "bad" : "bad_dir", "pending" : "raw_dir", "unlabeled" : "raw_dir"}
 }
 
-def seclect_folder(path_type: str) -> None:
+def select_folder(path_type: str) -> None:
     """选择文件夹并保存到 config。
 
     调用 pick_folder() 获取路径，db_dir 特殊处理（自动创建 label.db），
@@ -125,8 +124,8 @@ def quality_module(key_name: str, if_session_state: bool = True, session_state: 
     """渲染 GOOD/BAD 两个质量标记按钮。
 
     支持两种模式：
-    1. session_state 模式（if_session_state=True）— 从 session_state 读当前记录，用于 tab1。
-    2. target 模式（if_session_state=False）— 从 target 参数取记录数据，用于 tab2 popover。
+    1. session_state 模式（if_session_state=True）— 从 session_state 读当前记录。
+    2. target 模式（if_session_state=False）— 从 target 参数取记录数据。
 
     Args:
         key_name (str): 按钮 key 前缀，确保唯一性。
@@ -166,8 +165,8 @@ def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = T
     """渲染属性修改下拉框 + 确认按钮。
 
     支持两种模式：
-    1. session_state 模式 — 从 session_state 读当前记录，用于 tab1。
-    2. target 模式 — 从 target 取记录数据，用于 tab2 popover。
+    1. session_state 模式 — 从 session_state 读当前记录。
+    2. target 模式 — 从 target 取记录数据。
 
     Args:
         template_attrs (dict): config["custom_cols"] 属性配置。
@@ -234,9 +233,6 @@ st.set_page_config(page_title="HDF5 Labeling",
                    layout="wide",
                    initial_sidebar_state="expanded")
 
-with open("./hdf5_pipeline/label/style.css") as f:
-    st.markdown(f"<style>{f.read()}</style>",unsafe_allow_html=True)
-
 _ENABLE_SELECT_COLUMNS = False
 
 config = load_config("config.json")
@@ -267,7 +263,7 @@ with st.sidebar:
             st.text_input(keys, key=f"ui_{path}", label_visibility="collapsed", 
                           value=st.session_state.get(f"ui_{path}",config['paths'][path]))
         with col02:
-            st.button("📁浏览", key=f"btn_{path}", on_click=seclect_folder, args=(path,))
+            st.button("📁浏览", key=f"btn_{path}", on_click=select_folder, args=(path,))
     
     if st.button("扫描文件夹并同步数据库", key="btn_sync", width="stretch"):
         n = scan_pairs(
@@ -301,9 +297,9 @@ with tab4:
     col11, col12 = st.columns([1.5,3])
 #————标签页1-第一列：工作记录选择————
     with col11:
-        with st.container(key = "tag1_col1_container", border = True):
+        with st.container(key = f"{KEY_LABEL}_col1_container", border = True):
             next_flag = False
-            # st.markdown("<span class='tag1_col1_border'></span>", unsafe_allow_html=True)
+            # st.markdown("<span class='tabla_col1_border'></span>", unsafe_allow_html=True)
             st.markdown("**文件列表**")
             if st.button("获取并更新记录列表", key="byn_fetch", width="stretch"):
                 if Path(config["paths"]["db_dir"]).exists():
@@ -357,29 +353,29 @@ with tab4:
                                 """)
 #————标签页1-第一列：属性设置-质量分类————
         if next_flag:
-            with st.container(key = "tag1_col1_attr_checker", border = True):
-                    with st.container(key = "tab1_col1_qualities", border = False):
+            with st.container(key = f"{KEY_LABEL}_col1_attr_checker", border = True):
+                    with st.container(key = f"{KEY_LABEL}_col1_qualities", border = False):
                         st.markdown("**质量分类**")
-                        quality_module("tab1_quality_button")
+                        quality_module(f"{KEY_LABEL}_quality_button")
 #————标签页1-第一列：属性设置-属性修改————
-                    with st.container(key = "tag1_col1_attr_settings", border = False):
+                    with st.container(key = f"{KEY_LABEL}_col1_attr_settings", border = False):
                         st.markdown("**属性设置**")
                         if config["custom_cols"]:
                             attrs_module(
                                 config["custom_cols"],
-                                f"tab1_attr_{st.session_state['selected'][0]}",
+                                f"{KEY_LABEL}_attr_{st.session_state['selected'][0]}",
                                 if_session_state=True
                             )
 #————标签页1-第二列：工作区域————
 #————标签页1-第二列：工作区域-视频区域
     with col12:
-        with st.container(key = "tag1_col2_videobox", border = next_flag):
+        with st.container(key = f"{KEY_LABEL}_col2_videobox", border = next_flag):
             sel = st.session_state.get("selected")
             if sel:
                 st.markdown(f"**{(sel[4].split('/'))[-1]}**")
                 st.video(sel[4])
 #————标签页1-第二列：工作区域-图片区域
-        with st.container(key = "tag1_col2_graphbox",border = next_flag):
+        with st.container(key = f"{KEY_LABEL}_col2_graphbox",border = next_flag):
             sel = st.session_state.get("selected")
             if sel:
                 video_path = sel[4]
@@ -399,7 +395,7 @@ with tab5:
 ##————标签页2-第一列:数据批量处理————
 ##————标签页2-第一列-第一项:查询筛选————
     with col21:
-        with st.container(key = "tag2_sql_choose_container", border = True):
+        with st.container(key = f"{KEY_OVERVIEW}_sql_choose_container", border = True):
             st.markdown("**自定义查询**")
             if _ENABLE_SELECT_COLUMNS:
                 all_columns = {
@@ -435,7 +431,7 @@ with tab5:
                 attr_map[v["label"]] = f"$.{k}.option"
             if st.session_state.get("selected_button") is None:
                 st.session_state["selected_button"] = False
-            if st.button("执行查询", key="tag2_query", use_container_width=True):
+            if st.button("执行查询", key=f"{KEY_OVERVIEW}_query", use_container_width=True):
                 if _ENABLE_SELECT_COLUMNS:
                     col_names = ", ".join(all_columns[c] for c in selected_cols) if selected_cols else "*"
                 else:
@@ -452,22 +448,22 @@ with tab5:
                 if err:
                     st.error(f"报错：{err}")
                 else:
-                    st.session_state["tag2_records"] = result
+                    st.session_state[f"{KEY_OVERVIEW}_records"] = result
                     st.session_state["selected_button"] = True
 ##————标签页2-第一列-第二项:批量修改————
-        # with st.container(key = "tag2_sql_control_container", border = True):
-        with st.expander("**批量修改**", False, key = "tab2_sql_control_expander"):
+        # with st.container(key = f"{KEY_OVERVIEW}_sql_control_container", border = True):
+        with st.expander("**批量修改**", False, key = f"{KEY_OVERVIEW}_sql_control_expander"):
             st.markdown("**质量分类批量修改**")
             col23, col24 = st.columns([4,1])
             with col23:
-                batch_quality = st.selectbox("quality_batch", ["good", "bad", "pending", "unlabeled"], key = "tag2_batch_qualities", label_visibility = "collapsed")
+                batch_quality = st.selectbox("quality_batch", ["good", "bad", "pending", "unlabeled"], key = f"{KEY_OVERVIEW}_batch_qualities", label_visibility = "collapsed")
             with col24:
-                if st.button("确认", "tag2_bq_confirm_button", use_container_width = True):
-                    if st.session_state["tag2_records"] and st.session_state["tag2_records"] != []:
+                if st.button("确认", f"{KEY_OVERVIEW}_bq_confirm_button", use_container_width = True):
+                    if st.session_state[f"{KEY_OVERVIEW}_records"] and st.session_state[f"{KEY_OVERVIEW}_records"] != []:
                         count = 0
                         new_list = []
-                        tag2_selected = st.session_state.get("tag2_records")
-                        for selected_record in tag2_selected:
+                        tabov_selected = st.session_state.get(f"{KEY_OVERVIEW}_records")
+                        for selected_record in tabov_selected:
                             qualify_and_move(config["paths"]["db_dir"],
                                             selected_record[3],
                                             selected_record[2],
@@ -480,11 +476,11 @@ with tab5:
                             new_record = get_records(config["paths"]["db_dir"], selected_record[3])
                             new_list.append(new_record)
                             new_quality = new_record[5]
-                            st.session_state[f"t2_q_{new_record[0]}"] = (
+                            st.session_state[f"{KEY_OVERVIEW}_q_{new_record[0]}"] = (
                                 ["unlabeled", "good", "bad", "pending"].index(new_quality)
                                 if new_quality in ["unlabeled", "good", "bad", "pending"] else 0
                             )
-                        st.session_state["tag2_records"] = new_list
+                        st.session_state[f"{KEY_OVERVIEW}_records"] = new_list
                         st.toast(f"已修改 {count} 条记录，点击「获取/刷新数据」查看最新结果")
             st.markdown("**属性批量修改**")
             attrs_config = config["custom_cols"]
@@ -496,17 +492,17 @@ with tab5:
                 with col26:
                     multi_attrs_select = st.selectbox(
                         f"multi_attrs_select_{key}",
-                        key = f"attrs_select_of_tab2_col1_{key}",
+                        key = f"attrs_select_of_{KEY_OVERVIEW}_col1_{key}",
                         index = None,
                         options = attr_config.get("option", []),
                         label_visibility = "collapsed",
                         width = "stretch"
                     )
                 with col27:
-                    selected_records = st.session_state.get("tag2_records", [])
+                    selected_records = st.session_state.get(f"{KEY_OVERVIEW}_records", [])
                     if st.button(
                         f"确认",
-                        key = f"attrs_select_button_tab2_col1_{key}",
+                        key = f"attrs_select_button_{KEY_OVERVIEW}_col1_{key}",
                         width = "stretch"
                     ):
                         if multi_attrs_select is None:
@@ -521,22 +517,22 @@ with tab5:
                                 raw_attr_dict[key]["option"] = multi_attrs_select
                                 add_label(config["paths"]["db_dir"], record[3], attr = raw_attr_dict)
                             new_records = []
-                            for rec in st.session_state["tag2_records"]:
+                            for rec in st.session_state[f"{KEY_OVERVIEW}_records"]:
                                 latest = get_records(config["paths"]["db_dir"], rec[3])
                                 new_records.append(latest if latest else rec)
-                            st.session_state["tag2_records"] = new_records
+                            st.session_state[f"{KEY_OVERVIEW}_records"] = new_records
                             st.toast(f"已批量修改 {len(selected_records)} 条记录的属性")
                             st.rerun()
 ##————标签页2-第二列:数据列表显示————
     with col22:
-        with st.container(key = "tag2_database_viewer_container", border = True):
+        with st.container(key = f"{KEY_OVERVIEW}_database_viewer_container", border = True):
             st.markdown("**所有记录**")
-            if st.button("获取/刷新数据", key="tag2_refresh"):
+            if st.button("获取/刷新数据", key=f"{KEY_OVERVIEW}_refresh"):
                 records = get_list(str(Path(config["paths"]["db_dir"])))
-                st.session_state["tag2_records"] = records.copy()
-            if "tag2_records" in st.session_state:
-                records = st.session_state["tag2_records"]
-                page = st.session_state.get("tag2_page", 0)
+                st.session_state[f"{KEY_OVERVIEW}_records"] = records.copy()
+            if f"{KEY_OVERVIEW}_records" in st.session_state:
+                records = st.session_state[f"{KEY_OVERVIEW}_records"]
+                page = st.session_state.get(f"{KEY_OVERVIEW}_page", 0)
                 page_size = 10
                 
                 total = len(records)
@@ -556,9 +552,9 @@ with tab5:
                         # with st.container(border = True, gap = "xxsmall",height = "stretch"):
                         col_id, col_name, col_qual, col_attr = st.columns([1, 3, 2, 3], vertical_alignment = "center")
                         with col_id: st.markdown(f"**{rec[0]}**")
-                        # with col_name: st.button(f"{rec[3]}", key = f"t2_ln_{rec[0]}", disabled = True, width = "stretch")
+                        # with col_name: st.button(f"{rec[3]}", key = f"{KEY_OVERVIEW}_ln_{rec[0]}", disabled = True, width = "stretch")
                         with col_name:
-                            with st.popover(rec[3],key = f"tab2_listname_{rec[0]}", width = "stretch"):
+                            with st.popover(rec[3],key = f"{KEY_OVERVIEW}_listname_{rec[0]}", width = "stretch"):
                                 st.video(rec[4])
                                 n_frames = get_video_info(rec[4])[0]
                                 c22n1, c22n2 = st.columns(2)
@@ -570,13 +566,13 @@ with tab5:
                                     if frame is not None: st.image(frame, use_container_width=True)
                         with col_qual:
                             icon = {"good": "✅ ", "bad": "❌ ", "pending": "❎ ", "unlabeled": "⬜ "}.get(rec[5], "")
-                            # st.button(f"{icon}{rec[5]}", key = f"t2_lq_{rec[0]}", disabled = True, width = "stretch")
-                            with st.popover(f"{icon}{rec[5]}", key = f"tab2_listqual_{rec[0]}", width = "stretch"):
+                            # st.button(f"{icon}{rec[5]}", key = f"{KEY_OVERVIEW}_lq_{rec[0]}", disabled = True, width = "stretch")
+                            with st.popover(f"{icon}{rec[5]}", key = f"{KEY_OVERVIEW}_listqual_{rec[0]}", width = "stretch"):
                                 st.markdown("**质量选择**")
                                 quality_module(f"popover_{rec[0]}", False, target = rec)
 
                         if st.session_state.pop("_popover_quality_changed", False):
-                            st.session_state["tag2_records"] = get_list(str(Path(config["paths"]["db_dir"])))
+                            st.session_state[f"{KEY_OVERVIEW}_records"] = get_list(str(Path(config["paths"]["db_dir"])))
                             st.rerun()
 
                                 
@@ -591,12 +587,12 @@ with tab5:
                                     option = v.get("option", "") if isinstance(v, dict) else ""
                                     attrs_show.append(f"{label}:{option}")
                                 text_show = " | ".join(attrs_show) if attrs_show else "-"
-                                with st.popover(text_show, key = f"tab2_listattr_{rec[0]}", width = "stretch"):
+                                with st.popover(text_show, key = f"{KEY_OVERVIEW}_listattr_{rec[0]}", width = "stretch"):
                                     st.markdown("**质量选择**")
                                     attrs_module(config["custom_cols"], f"popover_attr_{rec[0]}", if_session_state=False, target=rec)
 
                                 if st.session_state.pop("_popover_attrs_changed", False):
-                                    st.session_state["tag2_records"] = get_list(str(Path(config["paths"]["db_dir"])))
+                                    st.session_state[f"{KEY_OVERVIEW}_records"] = get_list(str(Path(config["paths"]["db_dir"])))
                                     st.rerun()
                                     # st.text_input(f"attrs_show_{rec[1]}",
                                     #             placeholder = ' | '.join(attrs_show) if attrs_show else "-",
@@ -608,7 +604,7 @@ with tab5:
                 c_space_left, c_p, c_info, c_n, c_space_right = st.columns([3, 1, 2, 1, 3], vertical_alignment="center")
                 with c_p:
                     if page > 0 and st.button("⬅️", width = "content"):
-                        st.session_state["tag2_page"] = page - 1
+                        st.session_state[f"{KEY_OVERVIEW}_page"] = page - 1
                         st.rerun() 
                 with c_info:
                     st.button(
@@ -618,14 +614,14 @@ with tab5:
                     )
                 with c_n:
                     if page < total_pages - 1 and st.button("➡️", width = "content"):
-                        st.session_state["tag2_page"] = page + 1
+                        st.session_state[f"{KEY_OVERVIEW}_page"] = page + 1
                         st.rerun()
 
 ##————标签页6:配置界面————
 with tab6:
     st.subheader("自定义属性配置")
 ##————标签页3:配置界面 - 新建属性模块————
-    with st.container(key = "tag3_settings_container", border = True):
+    with st.container(key = f"{KEY_CONFIG}_settings_container", border = True):
         with st.expander("➕ 新建属性", expanded = False):
             col311,col312 = st.columns(2)
             with col311:
@@ -655,7 +651,7 @@ with tab6:
         if config["custom_cols"]:
             st.markdown("**已保存自定义属性**")
             for col_name, col_info in config["custom_cols"].items():
-                with st.container(key = f"tag3_para1_container{col_name}", border = True):
+                with st.container(key = f"{KEY_CONFIG}_para1_container{col_name}", border = True):
                     col321, col322,col323= st.columns([4,1,1])
                     with col321:
                         st.text_input("已经保存自定义属性", placeholder = f"{col_info['label']} — {'/ '.join(col_info['option'])} — type：{col_info['type']}", label_visibility = "collapsed")
@@ -681,7 +677,7 @@ with tab6:
                                 st.session_state.pop(f"editing_{col_name}", None)
                                 st.rerun()
                     with col323:
-                        if st.button("🗑️删除", key = f"tag3_para1_delete{col_name}", use_container_width = True):
+                        if st.button("🗑️删除", key = f"{KEY_CONFIG}_para1_delete{col_name}", use_container_width = True):
                             st.session_state[f"confirm_del_{col_name}"] = True
                     if st.session_state.get(f"confirm_del_{col_name}"):
                         st.warning(f"确定删除「{col_info['label']}」吗？")

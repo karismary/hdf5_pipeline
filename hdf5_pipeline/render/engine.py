@@ -171,7 +171,7 @@ def _draw_cursor_line(img, t, n_frames, x0, x1):
 # ==================== 主渲染函数 ====================
 
 def render_mp4(
-    hdf5_path: Path, out_mp4: Path,
+    hdf5_path: str, out_mp4: str,
     show_img: bool = True, show_act: bool = True,
     action_on: list = None, left_on: list = None, right_on: list = None,
     abort_event=None
@@ -183,8 +183,8 @@ def render_mp4(
     安全退出机制。
 
     Args:
-        hdf5_path (Path): 输入的 HDF5 数据文件路径。
-        out_mp4 (Path): 输出生成的 MP4 视频文件的目标路径。
+        hdf5_path (str): 输入的 HDF5 数据文件路径。
+        out_mp4 (str): 输出生成的 MP4 视频文件的目标路径。
         show_img (bool, optional): 是否在视频中包含实拍的相机图像面板。默认为 True。
         show_act (bool, optional): 是否在视频中包含动作维度曲线图。默认为 True。
         action_on (list, optional): 长度为 16 的布尔列表，控制 16 维动作曲线的具体显示状态。默认为全部开启。
@@ -208,14 +208,14 @@ def render_mp4(
 
     try:
         if abort_event and abort_event.is_set():
-            return False, "用户手动终止", hdf5_path.name
+            return False, "用户手动终止", Path(hdf5_path).name
 
         plt.close("all")
 
         # ---- 1. 加载数据 ----
         imgs,fps = load_images_from_hdf5(hdf5_str)
         if not imgs:
-            return False, "No camera images found", hdf5_path.name
+            return False, "No camera images found", Path(hdf5_path).name
         cams = list(imgs.keys())
         n_frames = min(v.shape[0] for v in imgs.values())
         act = load_actions_from_hdf5(hdf5_str, n_frames)
@@ -313,9 +313,9 @@ def render_mp4(
                     os.remove(out_str)
                 except Exception:
                     pass
-            return False, "用户手动终止", hdf5_path.name
+            return False, "用户手动终止", Path(hdf5_path).name
 
-        return True, "Video generated successfully", hdf5_path.name
+        return True, "Video generated successfully", Path(hdf5_path).name
 
     except Exception as e:
         err_msg = f"{str(e)} | {traceback.format_exc(limit=1).strip()}"
@@ -324,7 +324,7 @@ def render_mp4(
         if os.path.exists(out_str):
             try: os.remove(out_str)
             except Exception: pass
-        return False, err_msg, hdf5_path.name
+        return False, err_msg, Path(hdf5_path).name
 
     finally:
         if 'imgs' in locals(): del imgs

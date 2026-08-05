@@ -167,7 +167,16 @@ def get_list(db_path: str) -> List[Tuple[int, str, str, str, str, str, str, str,
 
     return row
 
-def get_records(db_path, mp4_name):
+def get_records(db_path: str, mp4_name: str):
+    """按 mp4_name 查询单条记录。
+
+    Args:
+        db_path (str): 数据库文件路径。
+        mp4_name (str): MP4 文件名。
+
+    Returns:
+        tuple 或 None: 记录元组 (id, hdf5_name, ..., labeled_at)，不存在返回 None。
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT id, hdf5_name, hdf5_path, mp4_name, mp4_path, quality, attr, created_at, labeled_at FROM label WHERE mp4_name =?", (mp4_name, ))
@@ -184,7 +193,7 @@ def translate_where(condition, attr_map):
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
     return result
 
-def query_records(db_path, columns, where_clause=None):
+def query_records(db_path: str, columns: str, where_clause: str | None = None):
     """执行自定义查询，返回结果列表。
 
     Args:

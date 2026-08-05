@@ -4,12 +4,12 @@ from typing import Tuple, Optional
 import cv2
 import numpy as np
 
-def extract_first_last_frames(mp4_path) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+def extract_first_last_frames(mp4_path: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """
     提取视频文件的首帧和尾帧，并将颜色空间从默认的 BGR 转换为 RGB。
 
     Args:
-        mp4_path (str or pathlib.Path): MP4 视频文件的绝对或相对路径。
+        mp4_path (str): MP4 视频文件的绝对或相对路径。
 
     Returns:
         tuple: 包含两个元素的元组 `(first_frame, last_frame)`。

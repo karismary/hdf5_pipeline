@@ -166,8 +166,4 @@ def run_quality_check(
     )
     export_results(rows, summary, out_csv, out_json)
 
-    print(f"Wrote CSV: {out_csv}")
-    print(f"Wrote JSON: {out_json}")
-    print(f"Outliers kept: {len(rows)}")
-
     return summary

@@ -47,3 +47,4 @@ uv.lock
 
 # 已废弃，本地保留不跟踪
 hdf5_pipeline/render/batch_gui.py
+hdf5_pipeline/label/style.css

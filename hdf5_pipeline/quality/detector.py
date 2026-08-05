@@ -188,22 +188,26 @@ def compute_outliers(
 
     return outlier_rows, summary
 
-def export_results(outlier_rows: list, summary: dict, out_csv: str, out_json: str) -> None:
-    """将异常帧列表写入 CSV，统计摘要写入 JSON。
+def export_results(outlier_rows: list, summary: dict, out_csv: str, out_json: str) -> bool:
+    """将异常帧记录写入 CSV（如有），统计摘要写入 JSON。
 
-    自动识别 out_csv / out_json 是否为目录：
-    - 是目录 → 在目录下创建默认文件名（outlier_doc.csv / summary_doc.json）
-    - 是文件路径 → 直接使用
+    out_csv / out_json 若是已存在的目录，则在该目录下创建默认文件名
+    （outlier_doc.csv / summary_doc.json）；否则按给定文件路径直接写入。
+
+    outlier_rows 为空时提前返回，此时不写 CSV 也不写 JSON。
 
     Args:
-        outlier_rows (list): compute_outliers 返回的异常帧记录列表。
-        summary (dict): compute_outliers 返回的统计摘要字典。
-        out_csv (str): CSV 输出路径或目录路径。
-        out_json (str): JSON 输出路径或目录路径。
+        outlier_rows (list[dict]): 待写入 CSV 的记录，每项一个 dict，
+            其键作为 CSV 的列名。
+        summary (dict): 待写入 JSON 的统计摘要字典。
+        out_csv (str): CSV 输出文件路径，或输出目录路径。
+        out_json (str): JSON 输出文件路径，或输出目录路径。
 
     Returns:
-        None。结果直接写入指定文件。
+        bool: outlier_rows 为空时返回 True（提前返回，未写入任何文件）；
+        否则返回 False（已写入 CSV 和 JSON）。
     """
+    no_list = False
 
     if Path(out_csv).is_dir():
         saved_csv = Path(out_csv)/"outlier_doc.csv"
@@ -214,6 +218,9 @@ def export_results(outlier_rows: list, summary: dict, out_csv: str, out_json: st
             writer = csv.DictWriter(f, fieldnames=list(outlier_rows[0].keys()))
             writer.writeheader()
             writer.writerows(outlier_rows)
+    else:
+        no_list = True
+        return no_list
 
     if Path(out_json).is_dir():
         saved_json = Path(out_json)/"summary_doc.json"
@@ -221,3 +228,5 @@ def export_results(outlier_rows: list, summary: dict, out_csv: str, out_json: st
         saved_json = out_json
     with open(saved_json, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    return no_list

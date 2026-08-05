@@ -1,0 +1,3 @@
+# Streamlit 原生主题配置（替代自定义 CSS）
+[theme]
+base = "light"   # "light" / "dark"；运行时右上角 ⋮ → Settings → Theme 可切换
