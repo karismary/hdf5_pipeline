@@ -44,7 +44,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "rename":
-        print(f"重命名: {args.src} → {args.dst}")
+        print(f"重命名: {args.src} → {args.out}")
         from hdf5_pipeline.rename.engine import collect_hdf5_files, rename_files
         files = collect_hdf5_files(args.src)
         n = rename_files(files, args.out)

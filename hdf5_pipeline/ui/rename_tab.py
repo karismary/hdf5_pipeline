@@ -37,7 +37,7 @@ def show_tab_rename() -> None:
                 st.button("📂浏览", key = f"{KEY_RENAME}_srcdir_bt", width = "stretch", on_click = folder_callback, args = (f"{KEY_RENAME}_src_dir_ti", ))
                 st.button("📂浏览", key = f"{KEY_RENAME}_dstdir_bt", width = "stretch", on_click = folder_callback, args = (f"{KEY_RENAME}_dst_dir_ti", ))
 
-            if st.button("🔍 扫描文件", use_container_width=True):
+            if st.button("🔍 扫描文件", width="stretch"):
                 if not src_dir or not Path(src_dir).exists():
                     st.warning("请先选择有效的源目录")
                 else:
@@ -52,7 +52,7 @@ def show_tab_rename() -> None:
                     else:
                         st.warning("未找到 HDF5 文件")
             
-            if "rename_files" in st.session_state and st.button("执行重命名", type="primary", use_container_width=True):
+            if "rename_files" in st.session_state and st.button("执行重命名", type="primary", width="stretch"):
                 n = rename_files(st.session_state["rename_files"], dst_dir)
                 st.success(f"成功重命名 {n} 个文件到 {dst_dir}")
 

@@ -1,5 +1,5 @@
 import shutil
-import datetime
+from datetime import datetime
 from pathlib import Path
 from hdf5_pipeline.core.hdf5_utils import get_hdf5_files, natural_sort_key
 
