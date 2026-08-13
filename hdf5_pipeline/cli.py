@@ -16,6 +16,36 @@ def _run_ui_module(module_name: str) -> None:
     ])
 
 
+def _run_spirit(args) -> None:
+    """执行 spirit 子命令：convert / check / validate / ui。"""
+    from hdf5_pipeline.parquet_ui_redo.convert import convert_spirit
+    from hdf5_pipeline.parquet_ui_redo.quality import run_spirit_quality
+    from hdf5_pipeline.parquet_ui_redo.validator import validate_spirit_dataset
+
+    if args.spirit_cmd == "convert":
+        print(f"spirit 转换: {args.raw_dir} → {args.out_dir}")
+        stats = convert_spirit(args.raw_dir, args.out_dir, link_videos=not args.copy_videos)
+        print(f"完成: 转换 {stats['converted']}, 跳过 {stats['skipped']}, 视频 {stats['videos']}")
+    elif args.spirit_cmd == "check":
+        print(f"spirit 质检: {args.raw_dir}, 严格度: {args.strictness}")
+        summary = run_spirit_quality(
+            args.raw_dir, args.out_csv, args.out_json, strictness=args.strictness
+        )
+        print(f"完成: {summary['num_files']} 个文件, {summary['num_frames']} 帧, "
+              f"{summary['num_outliers']} 个异常帧")
+    elif args.spirit_cmd == "validate":
+        ok, errors = validate_spirit_dataset(args.raw_dir)
+        if ok:
+            print("校验通过，未发现问题。")
+        else:
+            print(f"发现 {len(errors)} 个问题:")
+            for err in errors:
+                print(f"  - {err}")
+            raise SystemExit(1)
+    elif args.spirit_cmd == "ui":
+        subprocess.run(["streamlit", "run", "hdf5_pipeline/parquet_ui_redo/app.py"])
+
+
 def main():
     parser = argparse.ArgumentParser(description="HDF5 Pipeline CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -40,6 +70,27 @@ def main():
 
     sub.add_parser("render", help="视频渲染（启动独立渲染页面）")
     sub.add_parser("label", help="完整打标系统（启动 Streamlit）")
+
+    spirit_p = sub.add_parser("spirit", help="千寻(moz1) spirit parquet 数据：转换/质检/校验/UI")
+    spirit_sub = spirit_p.add_subparsers(dest="spirit_cmd", required=True)
+
+    sp_convert = spirit_sub.add_parser("convert", help="原始 parquet → 标准 LeRobot v2.1 数据集")
+    sp_convert.add_argument("raw_dir", help="原始数据目录（或单个实例目录）")
+    sp_convert.add_argument("out_dir", help="输出数据集目录（存在则先清空）")
+    sp_convert.add_argument("--copy-videos", action="store_true",
+                            help="视频用复制而非软链接（默认软链接）")
+
+    sp_check = spirit_sub.add_parser("check", help="原始数据异常帧检测")
+    sp_check.add_argument("raw_dir", help="原始数据目录")
+    sp_check.add_argument("out_csv", help="异常帧明细 CSV 路径")
+    sp_check.add_argument("out_json", help="统计摘要 JSON 路径")
+    sp_check.add_argument("--strictness", default="strict",
+                          choices=["loose", "medium", "strict"], help="判断严格程度（默认 strict）")
+
+    sp_validate = spirit_sub.add_parser("validate", help="结构完整性 + event_log 一致性校验")
+    sp_validate.add_argument("raw_dir", help="原始数据目录")
+
+    spirit_sub.add_parser("ui", help="启动 spirit 独立 Streamlit UI")
 
     args = parser.parse_args()
 
@@ -75,6 +126,8 @@ def main():
         _run_ui_module("render")
     elif args.command == "label":
         subprocess.run(["streamlit", "run", "hdf5_pipeline/label/app.py"])
+    elif args.command == "spirit":
+        _run_spirit(args)
 
 
 if __name__ == "__main__":

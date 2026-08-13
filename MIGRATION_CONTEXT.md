@@ -1,7 +1,7 @@
 # MIGRATION_CONTEXT.md — 会话上下文迁移档案
 
 > 用途：跨会话/跨模型切换时，把整个优化项目的上下文一次性带走。
-> 更新时间：2026-08-11（专项 01/02 均已完成并验证，专项 03 挂起等 .parquet）。
+> 更新时间：2026-08-13（专项 01/02/03 均已完成并验证）。
 
 ---
 
@@ -98,9 +98,58 @@
 
 ---
 
-## 五、尚未开始的专项
+## 五、专项 03 已完成（parquet 支持，2026-08-13）
 
-- **专项 03 parquet 支持**：**用户明确挂起**——等用户找到真实 `.parquet` 实例文件后再做，届时可能有大幅重构。`core/hdf5_utils.py` 已有 `get_hdf5_frame_count(h5_file, format)` 双格式雏形、`FORMAT_DICT={"lerobot":".parquet","hdf5":".hdf5"}`。
+### 两个并行模块
+- **`hdf5_pipeline/parquet_ui/`**：opencode 产出，**生产正式版**（含 README，未接 CLI）。
+- **`hdf5_pipeline/parquet_ui_redo/`**：**复现学习版**（用户逐功能复现，学 pyarrow），API 签名与契约对齐
+  parquet_ui，实现细节独立。CLI `spirit` 入口接本模块。
+
+### 数据契约（核心）
+- 源 = 千寻 moz1 原始 LeRobot：`{任务}/{时间戳}/{hash}/`，`data/chunk-000/episode_*.parquet`（26 列，
+  命令/状态是 `list<float>` 的 per-part 列）+ `videos/` mp4 + `meta/*` + `event_log.jsonl`。
+- 目标 = 标准 LeRobot v2.1：6 列（`observation.state` / `action` / `frame_index` / `timestamp` /
+  `episode_index` / `task_index`），`observation.state`/`action` 为 `list<float32>`(22)，
+  `meta/` 四件套 + 视频 symlink/copy。
+- **22 维布局**（`constants.MOTORS`，唯一依据）：左臂7 + 左爪1 + 右臂7 + 右爪1 + 腰6。
+- `SPIRIT_ACTION_COLS`（5 命令列）→ `SPIRIT_STATE_COLS` = `_cmd_` 替换成 `_state_`。
+- 剔除：`event_log.jsonl` payload `is_mistake=true` 的集跳过（含视频）。
+
+### redo 各模块（协作模式：业务我写，核心用户写）
+- `constants.py`：契约常量（用户写）。
+- `convert.py`：`episode_number` / `_camera_shape` / `parse_episodes`(→ `{idx:{is_mistake,tasks,stats}}`) /
+  `_load_instructions` / `_choose_instruction`(np.random.choice，按集选任务) / `assemble_episode`(用户写：
+  `np.concatenate([np.stack(t[c].to_numpy()) for c in cols], axis=1)` 出 (T,22)) / `_link_episode_videos`(pathlib
+  `dst.symlink_to(src.resolve())`，用户"不喜欢 os 库") / `convert_one_instance` / `_write_meta` / `convert_spirit`。
+- `quality.py`：`_find_instance_dirs` / `_load_spirit_parquet_episodes`(用户写，`.get(src_id,{})` + try/except
+  兜底 corrupt) / `run_spirit_quality`(复用 `quality.detector.compute_outliers`，`STRICTNESS_PRESETS` 取默认值 +
+  `cast()` 绕 detector 注解矛盾 `top_k_per_episode: int = None`)。
+- `validator.py`：`validate_spirit_file`(用户写) / `_read_meta_episodes` / `validate_spirit_dataset`(业务)。
+  用户判断"第四步定长检查省略"——经实验确认：**Arrow 只强制表内列行数一致，`list<float>` 列内每行元素长度可变**
+  （read_table 读得出来，`np.stack` 才炸），所以省略的代价 = 变长文件漏到装配层 try/except 兜底，而非 Arrow 兜底。
+- `app.py`：独立 Streamlit（三 tab：转换/质检/校验），版本号广播缓存（用户写 `_bump_version` 等 4 函数）。
+
+### CLI（`hdf5_pipeline/cli.py`）
+- `spirit` 二级子命令：`convert <raw> <out> [--copy-videos]` / `check <raw> <csv> <json> [--strictness]` /
+  `validate <raw>`（发现问题 exit 1）/ `ui`（streamlit run redo/app.py）。
+
+### 验证结果（真实数据）
+- `convert_spirit` 全库 14 实例：818 集转换 / 124 跳过 / 2454 视频，**3.2s**。
+- `spirit check` e46c484c：9 文件 / 9737 帧 / 0 异常（无异常帧时不生成 CSV/JSON，by-design）。
+- `spirit validate`：健康实例 PASS；发现 `pick_handle/20260723_013131402203/60b2f94a` 实例 19 个 episode
+  parquet **全 0 字节**（源数据问题，validator 正确显式报出）。
+- 性能诊断：read_table 305ms 是 pyarrow **进程内一次性初始化**，之后 1ms/集；`.tolist()` 非瓶颈
+  （5000 帧 2.3ms vs `ListArray.from_arrays` 0.0ms）——千余集规模 convert 已够快，未做多进程。
+
+### 关键技术点（教学，讲给用户听过）
+- **列序即契约**：装配顺序必须与契约一致，否则维度错位是静默错。
+- `np.stack` 把 `list<float>` 列变 (T,1|7|6)，`np.concatenate(axis=1)` 拼 22 维；gripper len=1 无需特判。
+- 写 list 列必须 `pa.array(arr.tolist(), type=pa.list_(pa.float32()))`——`pa.array(2D numpy)` 抛
+  "only handle 1-dimensional arrays"；`.tolist()` 不带 type 推断出 double。
+- **Arrow `list<float>` 是变长类型**（非 `fixed_size_list`）：表内列行数强制一致，list 列内元素长度可变。
+- 版本号广播：`st.tabs` 每次 rerun 全渲染、共享 session_state，跨 tab 同步靠"全局版本号 + 缓存条目内版本比对"，
+  stale 提示"该结果来自上一轮操作"。
+- `pq.read_table(columns=...)` 缺列直接抛 ArrowInvalid → 显式列检查是死代码（read_table 已兜底）。
 
 ---
 
@@ -134,7 +183,9 @@
 | `hdf5_pipeline/label/database.py` | ✅ `_connect` 工厂 + Row + 批量/分页/计数全齐 |
 | `hdf5_pipeline/label/state.py` | ✅ 新建（专项01 StateManager，git 未跟踪） |
 | `hdf5_pipeline/ui/rename_tab.py` | ✅ width="stretch" |
-| `hdf5_pipeline/cli.py` | ✅ 已改（ui/render 入口） |
+| `hdf5_pipeline/cli.py` | ✅ 已改（ui/render/spirit 入口） |
+| `hdf5_pipeline/parquet_ui_redo/` | ✅ 专项03 新建（constants/convert/quality/validator/app/README） |
+| `hdf5_pipeline/parquet_ui/` | ✅ 专项03 正式版（opencode 产出，含 README，未接 CLI） |
 | `hdf5_pipeline/rename/engine.py` | ✅ 已改（datetime import 修复） |
 | `hdf5_pipeline/ui/common.py` | ✅ widget key 常量 + folder_callback |
 | `hdf5_pipeline/ui/module_app.py` | ✅ 通用模块入口 |
@@ -149,7 +200,7 @@
 | `todo/README.md` | 条目清单（已全清） |
 | `tests/` | 待最后统一 pytest（目录已建，未写用例） |
 
-**当前 git 未提交**：M `cli.py`、`label/app.py`、`label/database.py`、`rename/engine.py`、`ui/rename_tab.py`；未跟踪 `MIGRATION_CONTEXT.md`、`label/state.py`。
+**当前 git 未提交**：M `.gitignore`、`cli.py`、`README.md`、`README_CN.md`、`MIGRATION_CONTEXT.md`；未跟踪 `hdf5_pipeline/parquet_ui_redo/`（`parquet_ui/` 在 `.gitignore` 中不跟踪——正式版仅本地参考）。
 
 ---
 
@@ -164,6 +215,6 @@
 
 ## 九、下一步（衔接点）
 
-1. **专项 03 parquet**：挂起中，等用户提供真实 `.parquet` 实例文件后开始。
+1. **专项 01/02/03 均已完成**，无挂起专项。
 2. **最终 pytest 完整链路回归**：用户已定最后写一份**测试文档**做完整链路测试（rename→quality→render→label 全流程），统一 pytest 回归。
 3. 已知边界（未定）：`qualify_and_move` 单条模式"目标文件已存在 → `pass` 静默跳过（不更新 DB、不 bump）"，与批量模式（仍走 add_labels 更新 DB）语义不一致；`update_attrs` 对缺失属性键 `continue` 跳过（by-design）。

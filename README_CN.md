@@ -22,6 +22,20 @@ streamlit run hdf5_pipeline/label/app.py
 
 浏览器打开 `http://localhost:8501`，界面包含 6 个功能页面。
 
+### spirit（千寻 moz1）parquet 专项
+
+```bash
+streamlit run hdf5_pipeline/parquet_ui_redo/app.py
+# 或通过 CLI：转换 / 质检 / 校验 / 启动 UI
+python hdf5_pipeline/cli.py spirit convert <raw_dir> <out_dir>
+python hdf5_pipeline/cli.py spirit check <raw_dir> <out_csv> <out_json>
+python hdf5_pipeline/cli.py spirit validate <raw_dir>
+python hdf5_pipeline/cli.py spirit ui
+```
+
+spirit 专项把千寻 moz1 采集的原始 LeRobot parquet 转换为标准 LeRobot v2.1 数据集（22 维），
+并单独质检与校验。UI 含转换 / 质检 / 校验三个 tab。
+
 ---
 
 ## 功能页面

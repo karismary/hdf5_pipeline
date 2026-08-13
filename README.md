@@ -50,6 +50,13 @@ hdf5_pipeline/
 │   ├── rename_tab.py           # 📁 文件重命名标签页
 │   ├── quality_tab.py          # 🧹 质量检测标签页
 │   └── render_tab.py           # 🎬 视频渲染标签页
+│
+├── parquet_ui_redo/            # spirit（千寻 moz1）parquet 专项（复现版，见 README.md）
+│   ├── constants.py            # 22 维列名 / CAMERAS / mask 契约（唯一依据）
+│   ├── convert.py              # 原始 parquet → 标准 LeRobot v2.1 数据集
+│   ├── quality.py              # spirit 数据单独质检（22 维 mask）
+│   ├── validator.py            # 结构 + event_log 一致性校验
+│   └── app.py                  # 独立 Streamlit UI（转换/质检/校验）
 
 config.json                     # 运行时路径 + 自定义打标属性定义
 pyproject.toml                  # 包元数据与依赖
@@ -260,6 +267,22 @@ streamlit run hdf5_pipeline/ui/module_app.py -- --module quality
 hdf5-pipeline ui --module quality
 ```
 
+### spirit（千寻 moz1）parquet 专项
+
+```bash
+# 独立 Streamlit UI（转换/质检/校验）
+streamlit run hdf5_pipeline/parquet_ui_redo/app.py
+# 或通过 CLI：转换 / 质检 / 校验 / 启动 UI
+python hdf5_pipeline/cli.py spirit convert <raw_dir> <out_dir>
+python hdf5_pipeline/cli.py spirit check <raw_dir> <out_csv> <out_json>
+python hdf5_pipeline/cli.py spirit validate <raw_dir>
+python hdf5_pipeline/cli.py spirit ui
+```
+
+spirit 专项把千寻 moz1 采集的**原始** LeRobot parquet（命令/状态分散在 per-part 列，
+无 `action` / `observation.state`）转换为标准 LeRobot v2.1（22 维 = 左臂7 + 左爪1 + 右臂7 + 右爪1 + 腰6），
+并单独质检与校验。详见 [parquet_ui_redo/README.md](hdf5_pipeline/parquet_ui_redo/README.md)。
+
 ### 编程调用
 
 ```python
@@ -301,7 +324,8 @@ add_label("label.db", "episode_000000.mp4", quality="good", attr='{"背景": "�
 | ui/rename_tab.py | ✅ 完成 | |
 | ui/quality_tab.py | ✅ 完成 | |
 | ui/render_tab.py | ✅ 完成 | 多进程并发 + @fragment 日志 + 超时保护 |
-| cli.py | ⏳ 未开始 | 统一命令行入口 |
+| cli.py | ✅ 完成 | rename / check / pipeline / ui / render / label + spirit 子命令 |
+| parquet_ui_redo/ | ✅ 完成 | spirit 专项（复现版）：convert / quality / validator / app，CLI 入口 `spirit` |
 | 单元测试 | ⏳ 未开始 | pytest 已配置 |
 
 ---
@@ -310,6 +334,6 @@ add_label("label.db", "episode_000000.mp4", quality="good", attr='{"背景": "�
 
 参见 [todo/](todo/README.md)，包含 3 个专项计划：
 
-- [session_state 统一管理](todo/01-session_state-统一管理.md)
-- [数据库大数据量优化](todo/02-database-大数据量优化.md)
-- [Parquet 格式支持](todo/03-补充parquet格式支持.md)
+- [x] [session_state 统一管理](todo/01-session_state-统一管理.md)
+- [x] [数据库大数据量优化](todo/02-database-大数据量优化.md)
+- [x] [Parquet 格式支持](todo/03-补充parquet格式支持.md) — 已完成：`hdf5_pipeline/parquet_ui_redo/`（+ `parquet_ui/` 正式版）
