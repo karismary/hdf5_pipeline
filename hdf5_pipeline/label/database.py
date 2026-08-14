@@ -374,8 +374,12 @@ def query_records(db_path: str, columns: str, where_clause: str | None, limit: i
     query = f"SELECT {columns} FROM label"
     if where_clause:
         query += f" WHERE {where_clause}"
-    
-    conn = _connect(db_path)
+
+    try:
+        conn = _connect(db_path)
+    except Exception as e:
+        return [], str(e)
+
     if limit is None:
         try:
             result = conn.execute(query).fetchall()
