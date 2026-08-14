@@ -19,6 +19,7 @@ S_TAB5_VERSION = "_tab5_db_version"
 
 # —— 一次性消息 ——
 S_TOAST = "_toast_msg"
+S_DB_WARNED = "_db_warned"        # 数据库不可用时的弹窗去重标记
 
 def get(key, default=None): 
     return st.session_state.get(key, default)

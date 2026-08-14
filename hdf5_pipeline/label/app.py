@@ -20,7 +20,7 @@ from hdf5_pipeline.label.state import (
     get, set, pop, init_state, bump_db_version,
     S_RECORDS, S_SELECTED, S_SELECTED_INDEX,
     S_OV_RECORDS, S_OV_PAGE, S_OV_WHERE,
-    S_DB_VERSION, S_TAB4_VERSION, S_TAB5_VERSION, S_TOAST, S_MARKED_RED,
+    S_DB_VERSION, S_TAB4_VERSION, S_TAB5_VERSION, S_TOAST, S_MARKED_RED, S_DB_WARNED,
 )
 
 # def select_folder(path_type):
@@ -274,7 +274,8 @@ def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = T
                         if isinstance(wk, str) and wk.startswith(f"attrs_{key_name}_"):
                             del st.session_state[wk]
 
-st.set_page_config(page_title="HDF5 Labeling",
+st.set_page_config(page_title="HDF5 Labeling Tool",
+                   page_icon=":material/brush:",
                    layout="wide",
                    initial_sidebar_state="expanded")
 
@@ -291,29 +292,69 @@ path_dict = {
     "bad_quality_hdf5存储路径":"bad_dir"
 }
 
-st.title("HDF5 Labeling Tool")
-st.write("用于给 HDF5 数据打标的工具，支持质量分类和属性的标注。")
+def _db_ready() -> bool:
+    """db_dir 是否指向含 label 表的有效 SQLite 数据库。"""
+    db_path = Path(config["paths"]["db_dir"])
+    if not db_path.exists():
+        return False
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='label'"
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+    except Exception:
+        return False
 
-# 处理跨 rerun 的 toast 消息
+@st.dialog("数据库不可用", icon=":material/error:")
+def _show_db_dialog() -> None:
+    st.warning("当前数据库路径无效，或尚未包含 label 表。")
+    st.markdown(
+        "请在**左侧边栏「工作路径配置」**中重新设置「数据库路径」：\n\n"
+        "- 用 **浏览** 选择文件夹，缺少的 `label.db` 会自动创建；\n"
+        "- 或直接指向已有的 `.db` 文件。\n\n"
+        "设置完成后即可正常使用。"
+    )
+    if st.button("知道了", key="db_dialog_ok"):
+        st.rerun()
+
+st.title("HDF5 Labeling Tool")
+st.caption("给 HDF5 数据打标的工具：质量分类 + 属性标注，配套文件重命名、质量检测、视频渲染等完整流水线。")
+
+# 数据库有效性：不可用则在侧边栏提示 + 首次弹窗（修复后自动清除标记）
+_db_ok = _db_ready()
+if _db_ok:
+    if pop(S_DB_WARNED, None):
+        set(S_TAB4_VERSION, -1)
+else:
+    st.error("数据库不可用：文件缺失或尚未包含 label 表，请在左侧边栏「工作路径配置」中设置正确的数据库路径。")
+    if not get(S_DB_WARNED, False):
+        set(S_DB_WARNED, True)
+        _show_db_dialog()
+
 _toast_msg = pop(S_TOAST, None)
 if _toast_msg:
     st.toast(_toast_msg)
 
 #————侧边栏：设置工作路径，调用本地选择文件夹————
 with st.sidebar:
-    st.subheader("工作路径配置", width = "content")
-    for keys in path_dict:
-        path = path_dict[keys]
+    st.subheader("工作路径配置", divider=True)
+    with st.container(border=True):
+        for keys in path_dict:
+            path = path_dict[keys]
+            st.markdown(f"**{keys}**")
+            col01, col02 = st.columns([4, 1], vertical_alignment="center")
+            with col01:
+                st.text_input(keys, key=f"ui_{path}", label_visibility="collapsed",
+                              value=st.session_state.get(f"ui_{path}", config['paths'][path]))
+            with col02:
+                st.button("浏览", key=f"btn_{path}", on_click=select_folder, args=(path,),
+                          icon=":material/folder_open:", width="content")
 
-        st.write(keys)
-        col01,col02 = st.columns([4,1])
-        with col01:
-            st.text_input(keys, key=f"ui_{path}", label_visibility="collapsed", 
-                          value=st.session_state.get(f"ui_{path}",config['paths'][path]))
-        with col02:
-            st.button("📁浏览", key=f"btn_{path}", on_click=select_folder, args=(path,))
-    
-    if st.button("扫描文件夹并同步数据库", key="btn_sync", width="stretch"):
+    if st.button("扫描文件夹并同步数据库", key="btn_sync", width="stretch", icon=":material/sync:"):
         n = scan_pairs(
             st.session_state.get("ui_db_dir", config['paths']['db_dir']),
             st.session_state.get("ui_mp4_dir", config['paths']['mp4_dir']),
@@ -326,7 +367,7 @@ with st.sidebar:
 #————主页面：————（根据需求添加后续标签）
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "文件重命名", "质量检测", "视频渲染",
-    "视频打标", "📊 数据总览", "⚙️ 配置"
+    "视频打标", "数据总览", "配置"
 ])
 
 #————标签页1:文件重命名————
@@ -338,12 +379,17 @@ with tab3: show_tab_render()
 #————标签页4:打标界面————
 with tab4:
     # DB 版本变化则重查记录缓存（覆盖打标、批量修改、扫描同步等所有写操作）
-    if get(S_DB_VERSION, 0) != get(S_TAB4_VERSION, 0):
-        set(S_RECORDS, get_list(str(Path(config["paths"]["db_dir"]))))
+    if _db_ok and get(S_DB_VERSION, 0) != get(S_TAB4_VERSION, 0):
+        try:
+            set(S_RECORDS, get_list(str(Path(config["paths"]["db_dir"]))))
+        except Exception:
+            pass
         set(S_TAB4_VERSION, get(S_DB_VERSION, 0))
     st.subheader("标记记录")
+    st.caption("从文件列表选择一条记录，查看首末帧与视频，完成质量分类与属性标注。")
+
     # —— 异常文件处理（CSV 自动导入）——
-    with st.expander("⚠️ 异常文件处理（CSV 自动导入）"):
+    with st.expander("异常文件处理（CSV 自动导入）", icon=":material/report:"):
         csv_path = Path(config["paths"]["csv_dir"]) / "outlier_frames.csv"
         if not csv_path.exists():
             st.info("未找到异常报告 CSV，请先在「质量检测」运行检测并导出到配置的 csv_dir\n若已经运行，则说明数据不存在质量问题")
@@ -352,12 +398,13 @@ with tab4:
                 abnormal = {row["file"] for row in csv.DictReader(f)}
                 placeholder = ", ".join(f"'{n.replace(chr(39), chr(39)*2)}'" for n in abnormal)
                 abnormal_records, _ = query_records(config["paths"]["db_dir"], "*", f"hdf5_name in ({placeholder})")
-            col001, col002 = st.columns(2)
+            col001, col002, col003 = st.columns(3)
             with col001:
-                if st.button("扫描文件的同时标红", key = f"{KEY_LABEL}_csv_scan_red"):
+                if st.button("扫描并标红", key = f"{KEY_LABEL}_csv_scan_red", icon=":material/flag:"):
                     set(S_MARKED_RED, get(S_MARKED_RED, frozenset()) | {r["mp4_name"] for r in abnormal_records})
                     st.rerun()
-                if st.button("全部设置为**bad**质量", key = f"{KEY_LABEL}_qualify_all"):
+            with col002:
+                if st.button("全部标记 bad", key = f"{KEY_LABEL}_qualify_all", icon=":material/block:"):
                     qualify_and_move(
                         config["paths"]["db_dir"],
                         target_dir = config["paths"]["bad_dir"],
@@ -367,27 +414,28 @@ with tab4:
                     )
                     set(S_MARKED_RED, get(S_MARKED_RED, frozenset()) - {r["mp4_name"] for r in abnormal_records})
                     st.rerun()
-            with col002:
-                if st.button("取消显示", key = f"{KEY_LABEL}_csv_clear_red"):
+            with col003:
+                if st.button("取消标红", key = f"{KEY_LABEL}_csv_clear_red", icon=":material/undo:"):
                     set(S_MARKED_RED, frozenset())
                     st.rerun()
-                marked = get(S_MARKED_RED, frozenset())
-                if marked:
-                    st.markdown("**检测到异常的记录：**")
-                    for name in sorted(marked):
-                        st.markdown(f'<span style="color:red">🔴 {name}</span>', unsafe_allow_html=True)
-        col11, col12 = st.columns([1.5,3])
+            marked = get(S_MARKED_RED, frozenset())
+            if marked:
+                st.markdown("**检测到异常的记录：**")
+                for name in sorted(marked):
+                    st.markdown(f'<span style="color:red">🔴 {name}</span>', unsafe_allow_html=True)
+
+    col11, col12 = st.columns([1.5, 3])
 #————标签页4-第一列：工作记录选择————
     with col11:
         with st.container(key = f"{KEY_LABEL}_col1_container", border = True):
             next_flag = False
             st.markdown("**文件列表**")
-            if st.button("获取并更新记录列表", key="byn_fetch", width="stretch"):
-                if Path(config["paths"]["db_dir"]).exists():
+            if st.button("获取并更新记录列表", key="byn_fetch", width="stretch", icon=":material/refresh:"):
+                if _db_ready():
                     set(S_RECORDS, get_list(config["paths"]["db_dir"]))
                     set(S_TAB4_VERSION, get(S_DB_VERSION, 0))
                 else:
-                    st.error("未查找到对应数据库，请展开侧边栏选择路径并创建")
+                    st.error("数据库不可用（文件缺失或没有 label 表），请在左侧边栏设置正确的数据库路径")
             if S_RECORDS in st.session_state:
                 next_flag = True
                 records = get(S_RECORDS)
@@ -407,57 +455,57 @@ with tab4:
                 labeled = good + bad
                 progress = labeled / total if total > 0 else 0
                 st.progress(progress, text = f"{labeled}/{total} 已完成标记")
+                st.caption(f"good {good} ｜ bad {bad} ｜ 待标 {total - labeled}")
 
                 col1101, col1102 = st.columns(2)
                 with col1101:
-                    if st.button("⬅️ 上一条", width="stretch"):
+                    if st.button("上一条", key=f"{KEY_LABEL}_prev", width="stretch", icon=":material/skip_previous:"):
                         if selected_idx > 0:
                             new_idx = selected_idx - 1
                             set(S_SELECTED_INDEX, new_idx)
                             set(S_SELECTED, records[new_idx])
                             st.rerun()
-                with col1102:       
-                    if st.button("➡️ 下一条", width="stretch"):
+                with col1102:
+                    if st.button("下一条", key=f"{KEY_LABEL}_next", width="stretch", icon=":material/skip_next:"):
                         if selected_idx < len(records) - 1:
                             new_idx = selected_idx + 1
                             set(S_SELECTED_INDEX, new_idx)
                             set(S_SELECTED, records[new_idx])
                             st.rerun()
-                        
+
                 if selected_idx is not None:
                     next_flag = True
                     selected = records[get(S_SELECTED_INDEX, 0)]
                     set(S_SELECTED, selected)
-                    st.markdown(f"""
-                                标注状态：**{'✅' if selected['quality']=='good' else '❌' if selected['quality']=='bad' else '☑️'}-{selected['quality']}**\n
-                                名称：**{selected['hdf5_name']}**
-                                """)
+                    q_icon = {"good": "✅", "bad": "❌", "pending": "❎", "unlabeled": "☑️"}.get(selected['quality'], "☑️")
+                    st.markdown(f"{q_icon} **{selected['quality']}**　·　`{selected['hdf5_name']}`")
 #————标签页4-第一列：属性设置-质量分类————
         if next_flag:
             with st.container(key = f"{KEY_LABEL}_col1_attr_checker", border = True):
-                    with st.container(key = f"{KEY_LABEL}_col1_qualities", border = False):
-                        st.markdown("**质量分类**")
-                        quality_module(f"{KEY_LABEL}_quality_button")
-#————标签页4-第一列：属性设置-属性修改————
-                    with st.container(key = f"{KEY_LABEL}_col1_attr_settings", border = False):
-                        st.markdown("**属性设置**")
-                        if config["custom_cols"]:
-                            attrs_module(
-                                config["custom_cols"],
-                                f"{KEY_LABEL}_attr_{get(S_SELECTED)['id']}",
-                                if_session_state=True
-                            )
+                with st.container(key = f"{KEY_LABEL}_col1_qualities", border = False):
+                    st.markdown("**质量分类**")
+                    quality_module(f"{KEY_LABEL}_quality_button")
+                with st.container(key = f"{KEY_LABEL}_col1_attr_settings", border = False):
+                    st.markdown("**属性设置**")
+                    if config["custom_cols"]:
+                        attrs_module(
+                            config["custom_cols"],
+                            f"{KEY_LABEL}_attr_{get(S_SELECTED)['id']}",
+                            if_session_state=True
+                        )
+                    else:
+                        st.caption("暂无自定义属性，请到「配置」页添加")
 #————标签页4-第二列：工作区域————
     with col12:
-#————标签页4-第二列：工作区域-图片区域
-        with st.container(key = f"{KEY_LABEL}_col2_graphbox",border = next_flag):
+        with st.container(key = f"{KEY_LABEL}_col2_graphbox", border = next_flag):
             sel = get(S_SELECTED)
             if sel:
                 video_path = sel["mp4_path"]
                 n_frames = get_video_info(video_path)[0]
-                col121, col122 = st.columns([1,1])
+                st.markdown("**首 / 末帧预览**")
+                col121, col122 = st.columns([1, 1], vertical_alignment="center")
                 with col121:
-                    first_frame = get_frame(video_path,0)
+                    first_frame = get_frame(video_path, 0)
                     if first_frame is not None:
                         st.image(first_frame, caption = "首帧", width="stretch")
                     else:
@@ -468,20 +516,24 @@ with tab4:
                         st.image(last_frame, caption = "末帧", width="stretch")
                     else:
                         st.info("无法读取末帧")
-#————标签页4-第二列：工作区域-视频区域
         with st.container(key = f"{KEY_LABEL}_col2_videobox", border = next_flag):
             sel = get(S_SELECTED)
             if sel:
-                st.markdown(f"**{(sel['mp4_path'].split('/'))[-1]}**")
+                st.markdown(f"**视频：`{(sel['mp4_path'].split('/'))[-1]}`**")
                 st.video(sel['mp4_path'])
 
 ##————标签页5:数据总览操作界面————
 with tab5:
     st.subheader("数据总览")
-    col21, col22 = st.columns([1.5,3])
+    st.caption("自定义 SQL 查询与批量修改，右侧实时查看记录列表。")
+    col21, col22 = st.columns([1.5, 3])
 ##————标签页5-第一列:数据批量处理————
 ##————标签页5-第一列-第一项:查询筛选————
     with col21:
+        # 清除筛选信号：须在 SELECT/WHERE 控件实例化之前消费（改 widget key 有 Streamlit 限制）
+        if pop(f"{KEY_OVERVIEW}_clear_sync", None):
+            st.session_state[f"{KEY_OVERVIEW}_select_cols"] = []
+            st.session_state[f"{KEY_OVERVIEW}_where_input"] = ""
         with st.container(key = f"{KEY_OVERVIEW}_sql_choose_container", border = True):
             st.markdown("**自定义查询**")
             all_columns: dict[str, str] = {}
@@ -496,9 +548,11 @@ with tab5:
                     "**SELECT**（筛选目标列）",
                     options = list(all_columns.keys()),
                     default = None,
-                    placeholder = "可多选"
+                    placeholder = "可多选",
+                    key = f"{KEY_OVERVIEW}_select_cols",
                 )
             sql_where = st.text_area("**WHERE**（筛选条件）",
+                                    key = f"{KEY_OVERVIEW}_where_input",
                                     placeholder='输入筛选条件例: quality = "good" \n留空则查询所有数据',
                                     help="""
                                     SQL 筛选语法说明：
@@ -520,7 +574,7 @@ with tab5:
                 attr_map[v["label"]] = f"$.{k}.option"
             col211, col212 = st.columns(2)
             with col211:
-                if st.button("执行查询", key=f"{KEY_OVERVIEW}_query", width="stretch"):
+                if st.button("执行查询", key=f"{KEY_OVERVIEW}_query", width="stretch", type="primary", icon=":material/search:"):
                     where_condition: str | None = None
                     col_names = "*"
                     if _ENABLE_SELECT_COLUMNS:
@@ -541,20 +595,39 @@ with tab5:
                     else:
                         set(S_OV_WHERE, where_condition if where_condition else "")
                         set(S_OV_PAGE, 0)
+                        set(f"{KEY_OVERVIEW}_jump_sync", 0)
                         set(S_OV_RECORDS, result)
-            # with col212:
+            with col212:
+                if st.button("清除所有筛选", key=f"{KEY_OVERVIEW}_clear_filter", width="stretch", icon=":material/restart_alt:"):
+                    set(f"{KEY_OVERVIEW}_clear_sync", True)   # 信号：下轮 rerun 在控件实例化前清空输入
+                    set(S_OV_WHERE, "")
+                    set(S_OV_PAGE, 0)
+                    set(f"{KEY_OVERVIEW}_jump_sync", 0)
+                    result, err = query_records(
+                        str(config["paths"]["db_dir"]),
+                        "*",
+                        None,
+                        limit = PAGE_SIZE,
+                        offset = 0,
+                    )
+                    if err:
+                        st.error(f"报错：{err}")
+                    else:
+                        set(S_OV_RECORDS, result)
+                    st.rerun()
 
 ##————标签页5-第一列-第二项:批量修改————
         # with st.container(key = f"{KEY_OVERVIEW}_sql_control_container", border = True):
-        with st.expander("**批量修改**", False, key = f"{KEY_OVERVIEW}_sql_control_expander"):
+        with st.expander("**批量修改**", False, key = f"{KEY_OVERVIEW}_sql_control_expander", icon=":material/select_all:"):
             st.markdown("**质量分类批量修改**")
-            col23, col24 = st.columns([4,1])
+            st.caption("作用于当前筛选结果（WHERE 条件）命中的全部记录。")
+            col23, col24 = st.columns([4, 1], vertical_alignment="center")
             with col23:
                 batch_quality = st.selectbox("quality_batch", ["good", "bad", "pending", "unlabeled"], key = f"{KEY_OVERVIEW}_batch_qualities", label_visibility = "collapsed")
             with col24:
                 page = get(S_OV_PAGE, 0)
                 where = get(S_OV_WHERE)
-                if st.button("确认", f"{KEY_OVERVIEW}_bq_confirm_button", width="stretch"):
+                if st.button("确认", key=f"{KEY_OVERVIEW}_bq_confirm_button", width="stretch", icon=":material/check:"):
                     full_selected, err = query_records(config["paths"]["db_dir"], "*", where)
                     if err:
                         st.error(f"错误:{err}")
@@ -584,10 +657,10 @@ with tab5:
             attrs_config = config["custom_cols"]
             for key, attr in attrs_config.items():
                 attr_config = attrs_config[key]
-                col25, col26, col27 = st.columns([1,3,1])
+                col25, col26, col27 = st.columns([1, 3, 1], vertical_alignment="center")
                 with col25:
                     label = attr.get('label')
-                    st.write(f"{label}:")
+                    st.markdown(f"**{label}:**")
                 with col26:
                     multi_attrs_select = st.selectbox(
                         f"multi_attrs_select_{key}",
@@ -602,9 +675,10 @@ with tab5:
                     page = get(S_OV_PAGE, 0)
                     full_selected, _ = query_records(config["paths"]["db_dir"], "*", where)
                     if st.button(
-                        f"确认",
+                        "确认",
                         key = f"attrs_select_button_{KEY_OVERVIEW}_col1_{key}",
-                        width = "stretch"
+                        width = "stretch",
+                        icon = ":material/check:"
                     ):
                         if multi_attrs_select is None:
                             st.rerun()
@@ -631,7 +705,7 @@ with tab5:
         where = get(S_OV_WHERE)
         with st.container(key = f"{KEY_OVERVIEW}_database_viewer_container", border = True):
             st.markdown("**所有记录**")
-            if st.button("获取/刷新数据", key=f"{KEY_OVERVIEW}_refresh"):
+            if st.button("获取/刷新数据", key=f"{KEY_OVERVIEW}_refresh", icon=":material/refresh:"):
                 records, err = query_records(
                     config["paths"]["db_dir"], "*", where,
                     limit = PAGE_SIZE, offset = page * PAGE_SIZE)
@@ -644,7 +718,12 @@ with tab5:
                 records = get(S_OV_RECORDS)
                 total = count_list(config["paths"]["db_dir"], where)
                 total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-                
+
+                # 翻页/跳转后同步跳转输入框（须在 number_input 实例化之前设置）
+                _sync_page = pop(f"{KEY_OVERVIEW}_jump_sync", None)
+                if _sync_page is not None:
+                    set(f"{KEY_OVERVIEW}_jump", _sync_page + 1)
+
                 with st.container(border = True):
                     h_id, h_name, h_qual, h_attr = st.columns([1, 3, 2, 3], vertical_alignment = "center")
                     with h_id: st.markdown("**ID**")
@@ -652,6 +731,8 @@ with tab5:
                     with h_qual: st.markdown("**质量**")
                     with h_attr: st.markdown("**属性**")
                 
+                if not records:
+                    st.caption("当前筛选无记录，可点击「获取/刷新数据」或「清除所有筛选」。")
                 with st.container(border = True):
                     for rec in records:
                         col_id, col_name, col_qual, col_attr = st.columns([1, 3, 2, 3], vertical_alignment = "center")
@@ -683,13 +764,14 @@ with tab5:
                                     attrs_show.append(f"{label}:{option}")
                                 text_show = " | ".join(attrs_show) if attrs_show else "-"
                                 with st.popover(text_show, key = f"{KEY_OVERVIEW}_listattr_{rec['id']}", width = "stretch"):
-                                    st.markdown("**质量选择**")
+                                    st.markdown("**属性修改**")
                                     attrs_module(config["custom_cols"], f"popover_attr_{rec['id']}", if_session_state=False, target=rec)
 
                 st.divider()
-                c_space_left, c_p, c_info, c_n, c_space_right = st.columns([3, 1, 2, 1, 3], vertical_alignment="center")
+                c_p, c_info, c_jump, c_n = st.columns([1, 2, 3, 1], vertical_alignment="center")
                 with c_p:
-                    if page > 0 and st.button("⬅️", width = "content"):
+                    if page > 0 and st.button("", key=f"{KEY_OVERVIEW}_page_prev", width = "content",
+                                              icon=":material/chevron_left:", help="上一页"):
                         new_page = page - 1
                         records, err = query_records(
                             config["paths"]["db_dir"], "*", where,
@@ -697,15 +779,34 @@ with tab5:
                         if not err:
                             set(S_OV_RECORDS, records)
                             set(S_OV_PAGE, new_page)
+                            set(f"{KEY_OVERVIEW}_jump_sync", new_page)
                         st.rerun()
                 with c_info:
-                    st.button(
-                        f"第 {page+1}/{total_pages} 页（共 {total} 条）", 
-                        disabled=True, 
-                        width = "content"
-                    )
+                    st.markdown(f"**第 {page + 1} / {total_pages} 页 · 共 {total} 条**")
+                with c_jump:
+                    colj1, colj2 = st.columns([2, 1], vertical_alignment="center")
+                    with colj1:
+                        target = st.number_input("跳转页", min_value = 1, max_value = total_pages,
+                                                 step = 1,
+                                                 key = f"{KEY_OVERVIEW}_jump",
+                                                 label_visibility = "collapsed",
+                                                 help = f"输入目标页码（1 ~ {total_pages}）")
+                    with colj2:
+                        if st.button("跳转", key=f"{KEY_OVERVIEW}_jump_btn", width = "stretch",
+                                     icon=":material/arrow_forward:"):
+                            if target != page + 1:
+                                new_page = target - 1
+                                records, err = query_records(
+                                    config["paths"]["db_dir"], "*", where,
+                                    limit = PAGE_SIZE, offset = new_page * PAGE_SIZE)
+                                if not err:
+                                    set(S_OV_RECORDS, records)
+                                    set(S_OV_PAGE, new_page)
+                                    set(f"{KEY_OVERVIEW}_jump_sync", new_page)
+                            st.rerun()
                 with c_n:
-                    if page < total_pages - 1 and st.button("➡️", width = "content"):
+                    if page < total_pages - 1 and st.button("", key=f"{KEY_OVERVIEW}_page_next", width = "content",
+                                                             icon=":material/chevron_right:", help="下一页"):
                         new_page = page + 1
                         records, err = query_records(
                             config["paths"]["db_dir"], "*", where,
@@ -713,6 +814,7 @@ with tab5:
                         if not err:
                             set(S_OV_RECORDS, records)
                             set(S_OV_PAGE, new_page)
+                            set(f"{KEY_OVERVIEW}_jump_sync", new_page)
                         st.rerun()
 
 # 弹窗质量/属性修改、其他 tab 写库后统一刷新当前页
@@ -729,23 +831,24 @@ if get(S_DB_VERSION, 0) != get(S_TAB5_VERSION, 0):
 ##————标签页6:配置界面————
 with tab6:
     st.subheader("自定义属性配置")
+    st.caption("新增 / 编辑 / 删除自定义属性，或导入导出配置备份。")
 ##————标签页6:配置界面 - 新建属性模块————
     with st.container(key = f"{KEY_CONFIG}_settings_container", border = True):
-        with st.expander("➕ 新建属性", expanded = False):
-            col311,col312 = st.columns(2)
+        with st.expander("新建属性", expanded = False, icon=":material/add_box:"):
+            col311, col312 = st.columns(2, vertical_alignment="center")
             with col311:
                 new_key = st.text_input("属性键名（英文名）", placeholder="例: attr_method")
                 new_label = st.text_input("显示名称", placeholder="例: 朝向")
             with col312:
-                new_type = st.selectbox("输入类型", [#重力束缚的灵魂啊
+                new_type = st.selectbox("输入类型", [
                     "select",         # 下拉单选（最常用）
                     "multi_select",   # 多选标签
                     "text",           # 短文本
                     "number",         # 数字
                     "boolean",        # 是/否
                 ])
-                new_options = st.text_input("选项（逗号分隔）", placeholder="例: 垂直,倾斜,水平")   
-            if st.button("✅ 确认添加"):
+                new_options = st.text_input("选项（逗号分隔）", placeholder="例: 垂直,倾斜,水平")
+            if st.button("确认添加", icon=":material/add:"):
                 if not new_key or not new_label:
                     st.error("属性键名和显示名称不能为空")
                 else:
@@ -761,22 +864,19 @@ with tab6:
             st.markdown("**已保存自定义属性**")
             for col_name, col_info in config["custom_cols"].items():
                 with st.container(key = f"{KEY_CONFIG}_para1_container{col_name}", border = True):
-                    col321, col322,col323= st.columns([4,1,1])
+                    col321, col322, col323 = st.columns([4, 1, 1], vertical_alignment="center")
                     with col321:
                         st.text_input("已经保存自定义属性", placeholder = f"{col_info['label']} — {'/ '.join(col_info['option'])} — type：{col_info['type']}", label_visibility = "collapsed")
                     with col322:
-                        # if st.button("✏️编辑", key=f"edit_{col_name}", width="stretch"):
-                        #     st.session_state[f"editing_{col_name}"] = not st.session_state.get(f"editing_{col_name}", False)
-                        # if st.session_state.get(f"editing_{col_name}"):
-                        with st.popover(f"展开以 🔧 编辑: {col_info['label']}属性"):
+                        with st.popover(f"编辑: {col_info['label']} 属性", icon=":material/build:"):
                             new_label = st.text_input("显示名称", value=col_info.get("label", ""), key=f"el_{col_name}")
                             new_type = st.selectbox("输入类型", ["select","multi_select","text","number","boolean"],
                                                     index=["select","multi_select","text","number","boolean"].index(col_info.get("type","select")),
                                                     key=f"et_{col_name}")
-                            new_options = st.text_input("选项（逗号分隔）", 
+                            new_options = st.text_input("选项（逗号分隔）",
                                                         value=", ".join(col_info.get("options", [])),
                                                         key=f"eo_{col_name}")
-                            if st.button("保存修改", key=f"save_{col_name}"):
+                            if st.button("保存修改", key=f"save_{col_name}", icon=":material/save:"):
                                 config["custom_cols"][col_name].update({
                                     "label": new_label,
                                     "type": new_type,
@@ -786,37 +886,38 @@ with tab6:
                                 st.session_state.pop(f"editing_{col_name}", None)
                                 st.rerun()
                     with col323:
-                        if st.button("🗑️删除", key = f"{KEY_CONFIG}_para1_delete{col_name}", width="stretch"):
+                        if st.button("删除", key = f"{KEY_CONFIG}_para1_delete{col_name}", width="stretch", icon=":material/delete:"):
                             st.session_state[f"confirm_del_{col_name}"] = True
                     if st.session_state.get(f"confirm_del_{col_name}"):
                         st.warning(f"确定删除「{col_info['label']}」吗？")
                         c1, c2 = st.columns(2)
                         with c1:
-                            if st.button("✅ 确认删除", key=f"confirm_yes_{col_name}"):
+                            if st.button("确认删除", key=f"confirm_yes_{col_name}", icon=":material/check:"):
                                 del config["custom_cols"][col_name]
                                 save_config(config)
                                 st.session_state.pop(f"confirm_del_{col_name}", None)
                                 st.rerun()
                         with c2:
-                            if st.button("❌ 取消", key=f"confirm_no_{col_name}"):
+                            if st.button("取消", key=f"confirm_no_{col_name}", icon=":material/close:"):
                                 st.session_state.pop(f"confirm_del_{col_name}", None)
                                 st.rerun()
         else:
             st.info("暂无自定义属性，在上方添加")
             
         st.divider()
-        st.markdown("**导入/导出配置**")
-        cola, colb = st.columns(2)
+        st.markdown("**导入 / 导出配置**")
+        cola, colb = st.columns(2, vertical_alignment="center")
         with cola:
             st.download_button(
-                "📤 导出属性配置",
+                "导出属性配置",
                 data=json.dumps(config["custom_cols"], ensure_ascii=False, indent=2),
                 file_name="custom_cols_backup.json",
                 mime="application/json",
-                width="stretch"
+                width="stretch",
+                icon=":material/download:",
             )
         with colb:
-            uploaded = st.file_uploader("📥 导入属性配置", type="json", label_visibility="collapsed")
+            uploaded = st.file_uploader("导入属性配置", type="json", label_visibility="collapsed")
             if uploaded:
                 try:
                     data = json.load(uploaded)

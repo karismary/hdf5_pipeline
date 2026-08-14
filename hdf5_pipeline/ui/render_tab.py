@@ -1,4 +1,4 @@
-"""🎬 视频渲染 — 将 HDF5 文件渲染为 MP4 视频。"""
+"""视频渲染 — 将 HDF5 文件渲染为 MP4 视频。"""
 
 import streamlit as st
 from pathlib import Path
@@ -39,7 +39,7 @@ def render_status() -> None:
     with st.container(key=f"{KEY_RENDER}_log", border=True):
         col_t, col_d = st.columns([3, 1])
         with col_t:
-            st.markdown("**📋 渲染日志**")
+            st.markdown("**渲染日志**")
         with col_d:
             st.checkbox("调试", key=f"{KEY_RENDER}_debug", value=False)
 
@@ -141,21 +141,25 @@ def render_all(files, src, out, show_image, show_action, action_on, left_on, rig
                     fail += 1
 
 def show_tab_render() -> None:
-    """🎬 视频渲染标签页主入口。
+    """视频渲染标签页主入口。
 
     提供路径选择、渲染选项配置、多进程并发渲染和日志监控。
     """
     config = load_config()
-    st.subheader("视频渲染")
-    with st.expander("**路径设置**", key = f"{KEY_RENDER}_path_set", expanded = True):
-        colqu1_1, colqu1_2 = st.columns([4,1])
-        with colqu1_1:
+    st.subheader("视频渲染", divider = True)
+    st.caption("将 HDF5 逐帧渲染为 MP4 视频，支持多进程并发与断点续传。")
+    with st.expander("路径设置", key = f"{KEY_RENDER}_path_set", expanded = True, icon = ":material/folder:"):
+        colr1, colr2 = st.columns([4, 1], vertical_alignment = "center")
+        with colr1:
             st.text_input("数据目录（HDF5）", key = f"{KEY_RENDER}_src_dir_ti", placeholder = "hdf5原始数据的文件夹目录", label_visibility = "collapsed")
+        with colr2:
+            st.button("浏览", key = f"{KEY_RENDER}_src_dir_bt", width = "content", on_click = folder_callback, args = (f"{KEY_RENDER}_src_dir_ti", ), icon = ":material/folder_open:")
+
+        colr3, colr4 = st.columns([4, 1], vertical_alignment = "center")
+        with colr3:
             st.text_input("视频导出目录（MP4）", key = f"{KEY_RENDER}_mp4_dir_ti", placeholder = "导出hdf5转换mp4视频文件的文件夹目录", label_visibility = "collapsed")
-        
-        with colqu1_2:
-            st.button("📂浏览", key = f"{KEY_RENDER}_src_dir_bt", width = "stretch", on_click = folder_callback, args = (f"{KEY_RENDER}_src_dir_ti", ))
-            st.button("📂浏览", key = f"{KEY_RENDER}_mp4_dir_bt", width = "stretch", on_click = folder_callback, args = (f"{KEY_RENDER}_mp4_dir_ti", ))
+        with colr4:
+            st.button("浏览", key = f"{KEY_RENDER}_mp4_dir_bt", width = "content", on_click = folder_callback, args = (f"{KEY_RENDER}_mp4_dir_ti", ), icon = ":material/folder_open:")
 
     colrd2_1, colrd2_2 = st.columns([1,1])
     with colrd2_1:
@@ -167,7 +171,7 @@ def show_tab_render() -> None:
             with colrd2_1_2:
                 st.checkbox("显示动作曲线", key = f"{KEY_RENDER}_show_action_cb", value = True)
 
-            with st.expander("动作维度（16维）", key = f"{KEY_RENDER}_action_dim_ep", expanded = False):
+            with st.expander("动作维度（16维）", key = f"{KEY_RENDER}_action_dim_ep", expanded = False, icon = ":material/tune:"):
                 st.session_state["action_on"] = []
                 action_cols = st.columns(8)
                 for i in range(16):
@@ -176,14 +180,14 @@ def show_tab_render() -> None:
 
             left_right_dict = {0:"should", 1:"should", 2:"should", 3:"elbow_", 4:"wrist_", 5:"wrist_", 6:"wrist_", }
 
-            with st.expander("左机械臂关节（7）", key = f"{KEY_RENDER}_left_dim_ep", expanded = False):
+            with st.expander("左机械臂关节（7）", key = f"{KEY_RENDER}_left_dim_ep", expanded = False, icon = ":material/build:"):
                 st.session_state.update(left_on = [])
                 left_cols = st.columns(7)
                 for i in range(7):
                     with left_cols[i]:
                         st.session_state["left_on"].append(st.checkbox(left_right_dict[i], key = f"{KEY_RENDER}_lefton_check_a{i}", value = True))
 
-            with st.expander("右机械臂关节（7）", key = f"{KEY_RENDER}_right_dim_ep", expanded = False):
+            with st.expander("右机械臂关节（7）", key = f"{KEY_RENDER}_right_dim_ep", expanded = False, icon = ":material/build:"):
                 st.session_state.update(right_on = [])
                 right_cols = st.columns(7)
                 for i in range(7):
@@ -197,13 +201,13 @@ def show_tab_render() -> None:
             with colrd3_1:
                 st.number_input("并发数", key = f"{KEY_RENDER}_sub_progress_cb", min_value = 1, max_value = os.cpu_count(), value = 2, help = "同时渲染的文件数量，建议不超过 CPU 核心数")
             with colrd3_2:
-                st.checkbox("跳过已生成的视频(断点续传)", key = f"{KEY_RENDER}_skip_exist_cb", value = True)
+                st.checkbox("跳过已生成的视频（断点续传）", key = f"{KEY_RENDER}_skip_exist_cb", value = True)
 
         with st.container(key = f"{KEY_RENDER}_container3", border = True):
             st.markdown("**视频输出**")
             colrd4_1, colrd4_2 = st.columns(2)
             with colrd4_1:
-                if st.button("开始转换", key = f"{KEY_RENDER}_start_transfer_bt", width = "stretch"):
+                if st.button("开始转换", key = f"{KEY_RENDER}_start_transfer_bt", width = "stretch", icon = ":material/play_arrow:"):
                     st.session_state.update(is_aborted = False)
                     src = st.session_state.get(f"{KEY_RENDER}_src_dir_ti")
                     out = st.session_state.get(f"{KEY_RENDER}_mp4_dir_ti")
@@ -240,7 +244,7 @@ def show_tab_render() -> None:
                             st.toast(f"开始渲染，共{file_count}个文件")
 
             with colrd4_2:
-                if st.button("终止转换", key = f"{KEY_RENDER}_abort_transfer_bt", width = "stretch"):
+                if st.button("终止转换", key = f"{KEY_RENDER}_abort_transfer_bt", width = "stretch", icon = ":material/stop:"):
                     ev = st.session_state.get("_render_stop")
                     if ev:
                         ev.set()
