@@ -10,6 +10,7 @@ __pycache__/
 .agents/
 .claude/
 hdf5_pipeline.egg-info/
+*.zip
 
 # ===== 运行时产物 =====
 _*.txt
