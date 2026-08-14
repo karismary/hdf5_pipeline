@@ -1,10 +1,11 @@
 {
     "paths": {
-        "db_dir": "/Users/karis/projects/test/test_data/db/label.db",
-        "raw_dir": "/Users/karis/projects/test/test_data/raw/",
-        "mp4_dir": "/Users/karis/projects/test/test_data/mp4/",
-        "good_dir": "/Users/karis/projects/test/test_data/good_quality/",
-        "bad_dir": "/Users/karis/projects/test/test_data/bad_quality/"
+        "db_dir": "/Users/karis/projects/hdf5_pipeline/test_data/db/label.db",
+        "raw_dir": "/Users/karis/projects/hdf5_pipeline/test_data/raw/",
+        "mp4_dir": "/Users/karis/projects/hdf5_pipeline/test_data/mp4/",
+        "good_dir": "/Users/karis/projects/hdf5_pipeline/test_data/good_quality/",
+        "bad_dir": "/Users/karis/projects/hdf5_pipeline/test_data/bad_quality/",
+        "csv_dir": "test_data/outlier/"
     },
     "custom_cols": {
         "attr_background": {

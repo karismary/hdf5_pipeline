@@ -57,8 +57,8 @@ def show_tab_quality() -> None:
                     Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
                     Path(json_path).parent.mkdir(parents=True, exist_ok=True)
 
-                    strictness = st.session_state.get(f"{KEY_QUALITY}_strict_sb")
-                    file_format = st.session_state.get(f"{KEY_QUALITY}_format_sb")
+                    strictness = str(st.session_state.get(f"{KEY_QUALITY}_strict_sb"))
+                    file_format = str(st.session_state.get(f"{KEY_QUALITY}_format_sb"))
 
                     with st.spinner("检测中......"):
                         if not src:

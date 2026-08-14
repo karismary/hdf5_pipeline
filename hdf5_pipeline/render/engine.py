@@ -6,6 +6,7 @@ import traceback
 import gc
 import platform
 from pathlib import Path
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -31,8 +32,8 @@ plt.rcParams['font.sans-serif'] = [
     'WenQuanYi Micro Hei',  # Linux 文泉驿
 ]
 plt.rcParams['axes.unicode_minus'] = False
-LINE_COLORS = plt.cm.tab20(np.linspace(0, 1, 16))
-JOINT_COLORS = plt.cm.plasma(np.linspace(0, 1, 7))
+LINE_COLORS = plt.get_cmap('tab20')(np.linspace(0, 1, 16))
+JOINT_COLORS = plt.get_cmap('plasma')(np.linspace(0, 1, 7))
 
 JOINT_ANGLE_ENVELOPE = (-3.14, 3.14)   # 关节角范围：转动关节收敛于 ±π 弧度
 MIN_ROW_H = 200                        # 面板行高下限：防图像过小时面板塌陷
@@ -102,7 +103,7 @@ def _render_action_curves(n_frames, act16, action_on, panel_w, panel_h):
     return img, ax_x0, ax_x1
 
 
-def _render_joint_curves(n_frames, joint_data, joint_on, title, panel_w, panel_h):
+def _render_joint_curves(n_frames, joint_data, joint_on, title, panel_w, panel_h) -> tuple[np.ndarray, int, int] | None:
     """渲染单侧机械臂的 7 维关节曲线，生成静态的 RGB 图像数组。
 
     Args:
@@ -173,7 +174,7 @@ def _draw_cursor_line(img, t, n_frames, x0, x1):
 def render_mp4(
     hdf5_path: str, out_mp4: str,
     show_img: bool = True, show_act: bool = True,
-    action_on: list = None, left_on: list = None, right_on: list = None,
+    action_on: list | None = None, left_on: list | None = None, right_on: list | None = None,
     abort_event=None
 ):
     """将 HDF5 格式的录像和传感器数据同步渲染合成 MP4 视频。
@@ -205,6 +206,7 @@ def render_mp4(
     video_writer = None
     out_str = str(Path(out_mp4).resolve())
     hdf5_str = str(Path(hdf5_path).resolve())
+    imgs = act16 = None
 
     try:
         if abort_event and abort_event.is_set():
@@ -233,27 +235,28 @@ def render_mp4(
         row_h = max(int(img_h), MIN_ROW_H)
 
         curve_action_img = None
+        ax_x0 = ax_x1 = 0
         if show_act:
             curve_action_img, ax_x0, ax_x1 = _render_action_curves(n_frames, act16, action_on, panel_w, row_h)
         curve_left_img = None
         lx_x0 = lx_x1 = None
         if any(left_on) and left_j is not None:
             j_w = panel_w // 2 if (any(right_on) and right_j is not None) else panel_w
-            curve_left_img, lx_x0, lx_x1 = _render_joint_curves(n_frames, left_j, left_on, "Left Arm Joints", j_w, row_h)
+            curve_left_img, lx_x0, lx_x1 = cast(tuple[np.ndarray, int, int], _render_joint_curves(n_frames, left_j, left_on, "Left Arm Joints", j_w, row_h))
 
         curve_right_img = None
         rx_x0 = rx_x1 = None
         if any(right_on) and right_j is not None:
             j_w = panel_w // 2 if (any(left_on) and left_j is not None) else panel_w
-            curve_right_img, rx_x0, rx_x1 = _render_joint_curves(n_frames, right_j, right_on, "Right Arm Joints", j_w, row_h)
+            curve_right_img, rx_x0, rx_x1 = cast(tuple[np.ndarray, int, int], _render_joint_curves(n_frames, right_j, right_on, "Right Arm Joints", j_w, row_h))
 
 
 
         # ---- 3. VideoWriter ----
         if platform.system() == "Darwin":
-            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+            fourcc = cast(Any, cv2).VideoWriter_fourcc(*'avc1')
         else:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            fourcc = cast(Any, cv2).VideoWriter_fourcc(*'mp4v')
 
         total_h = rows * row_h
         video_writer = cv2.VideoWriter(out_str, fourcc, fps, (panel_w, total_h))
@@ -327,6 +330,5 @@ def render_mp4(
         return False, err_msg, Path(hdf5_path).name
 
     finally:
-        if 'imgs' in locals(): del imgs
-        if 'act16' in locals(): del act16
+        del imgs, act16
         gc.collect()

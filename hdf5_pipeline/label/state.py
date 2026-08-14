@@ -5,6 +5,7 @@ from hdf5_pipeline.ui.common import KEY_OVERVIEW
 S_RECORDS = "records"                # tab4 读/写
 S_SELECTED = "selected"              # tab4 读，quality/attrs 写
 S_SELECTED_INDEX = "selected_index"
+S_MARKED_RED = "_marked_red"         # tab4 标红：被「不要」的 mp4_name 集合
 
 # —— tab5 分页局部（前缀与 widget 键一致，改 KEY_OVERVIEW 一处全变）——
 S_OV_RECORDS = f"{KEY_OVERVIEW}_records"
@@ -34,6 +35,7 @@ def init_state():
     st.session_state.setdefault(S_DB_VERSION, 0)
     st.session_state.setdefault(S_TAB4_VERSION, 0)
     st.session_state.setdefault(S_TAB5_VERSION, 0)
+    st.session_state.setdefault(S_MARKED_RED, frozenset())
 
 def bump_db_version():      # 任何对 label 表的写操作后调用
     set(S_DB_VERSION, get(S_DB_VERSION, 0) + 1)

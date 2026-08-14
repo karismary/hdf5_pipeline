@@ -43,6 +43,8 @@ def render_status() -> None:
         with col_d:
             st.checkbox("调试", key=f"{KEY_RENDER}_debug", value=False)
 
+        raw = ""
+        done = 0
         if RENDER_LOG.exists():
             raw = RENDER_LOG.read_text().strip()
             done = max(0, raw.count("\n"))
@@ -105,7 +107,7 @@ def render_all(files, src, out, show_image, show_action, action_on, left_on, rig
                 skip += 1
                 continue
             deadline = _render_deadlines(Path(src)/fname, "hdf5")
-            future = executor.submit(render_mp4, Path(src)/fname, Path(mp4),
+            future = executor.submit(render_mp4, str(Path(src)/fname), str(Path(mp4)),
                                     show_image, show_action, action_on, left_on, right_on, stop_event)
             pending[future] = (fname, deadline)
         while pending:
@@ -179,14 +181,14 @@ def show_tab_render() -> None:
                 left_cols = st.columns(7)
                 for i in range(7):
                     with left_cols[i]:
-                        st.session_state["left_on"].append(st.checkbox(left_right_dict.get(i), key = f"{KEY_RENDER}_lefton_check_a{i}", value = True))
+                        st.session_state["left_on"].append(st.checkbox(left_right_dict[i], key = f"{KEY_RENDER}_lefton_check_a{i}", value = True))
 
             with st.expander("右机械臂关节（7）", key = f"{KEY_RENDER}_right_dim_ep", expanded = False):
                 st.session_state.update(right_on = [])
                 right_cols = st.columns(7)
                 for i in range(7):
                     with right_cols[i]:
-                        st.session_state["right_on"].append(st.checkbox(left_right_dict.get(i), key = f"{KEY_RENDER}_righton_check_a{i}", value = True))
+                        st.session_state["right_on"].append(st.checkbox(left_right_dict[i], key = f"{KEY_RENDER}_righton_check_a{i}", value = True))
 
     with colrd2_2:
         with st.container(key = f"{KEY_RENDER}_container2", border = True):

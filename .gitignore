@@ -51,3 +51,5 @@ hdf5_pipeline/label/style.css
 
 test_data&nuc/
 parquet_ui/
+MIGRATION_CONTEXT.md
+development_doc/

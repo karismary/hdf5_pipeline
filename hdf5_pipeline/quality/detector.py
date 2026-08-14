@@ -81,10 +81,10 @@ def compute_outliers(
     episodes: list,
     mask: np.ndarray,
     strictness: str = "strict",
-    min_score: float = None,
-    top_k_per_episode: int = None,
-    top_k_global: int = None,
-    min_denom: float = None,
+    min_score: float | None = None,
+    top_k_per_episode: int | None = None,
+    top_k_global: int | None = None,
+    min_denom: float | None = None,
 ) -> tuple:
     """对所有 episode 计算异常帧。
 
@@ -102,13 +102,13 @@ def compute_outliers(
     # 1. 合并预设
     p = STRICTNESS_PRESETS[strictness]
     if min_score is None:
-        min_score = p["min_score"]
+        min_score = float(p["min_score"])
     if top_k_per_episode is None:
-        top_k_per_episode = p["top_k_per_episode"]
+        top_k_per_episode = int(p["top_k_per_episode"])
     if top_k_global is None:
-        top_k_global = p["top_k_global"]
+        top_k_global = int(p["top_k_global"])
     if min_denom is None:
-        min_denom = p["min_denom"]
+        min_denom = float(p["min_denom"])
 
     # 2. 全量 DeltaActions → 分位数
     n_total = sum(len(a) for _, a, _, _ in episodes)
@@ -151,6 +151,7 @@ def compute_outliers(
                 "q99": float(q99[d]),
                 "denom": float(denom[d]),
                 "file": str(Path(path).name),
+                "path": str(path),
             })
 
     # 4. 全局截断

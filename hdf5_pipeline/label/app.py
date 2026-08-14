@@ -1,8 +1,9 @@
 import json
 import copy
+import csv
 import sqlite3
 import streamlit as st
-# from streamlit_file_browser import st_file_browser 
+# from streamlit_file_browser import st_file_browser
 from pathlib import Path
 # import cv2
 import shutil
@@ -19,7 +20,7 @@ from hdf5_pipeline.label.state import (
     get, set, pop, init_state, bump_db_version,
     S_RECORDS, S_SELECTED, S_SELECTED_INDEX,
     S_OV_RECORDS, S_OV_PAGE, S_OV_WHERE,
-    S_DB_VERSION, S_TAB4_VERSION, S_TAB5_VERSION, S_TOAST,
+    S_DB_VERSION, S_TAB4_VERSION, S_TAB5_VERSION, S_TOAST, S_MARKED_RED,
 )
 
 # def select_folder(path_type):
@@ -76,10 +77,10 @@ def select_folder(path_type: str) -> None:
 
 def qualify_and_move(
     db_path: str,
-    mp4_name: str,
-    raw_path: str,
-    target_dir: str,
-    quality: str,
+    mp4_name: str | None = None,
+    raw_path: str | None = None,
+    target_dir: str | None = None,
+    quality: str | None = None,
     compare_quality: str | None = None,
     if_quantity: bool = False,
     quantity_records: list[sqlite3.Row] | None = None,
@@ -95,10 +96,10 @@ def qualify_and_move(
 
     Args:
         db_path (str): 数据库文件路径。
-        mp4_name (str): MP4 文件名，单条模式定位记录用。
-        raw_path (str): HDF5 文件当前完整路径（单条模式）。
-        target_dir (str): 目标文件夹（good_dir 或 bad_dir）。
-        quality (str): 目标质量标签，'good' 或 'bad'。
+        mp4_name (str | None, optional): MP4 文件名，单条模式定位记录用。
+        raw_path (str | None, optional): HDF5 文件当前完整路径（单条模式）。
+        target_dir (str | None, optional): 目标文件夹（good_dir 或 bad_dir）。
+        quality (str | None, optional): 目标质量标签，'good' 或 'bad'。
         compare_quality (str | None, optional): 当前质量值，用于跳过重复操作；
             不传时单条模式自动从 st.session_state["selected"] 读取，批量模式不生效。
         if_quantity (bool, optional): 是否批量模式，默认 False。
@@ -121,41 +122,49 @@ def qualify_and_move(
         if compare_quality == quality:
             st.rerun()
             return
-    if Path(target_dir).exists():
-        if not if_quantity:
-            # 单条模式
-            if (Path(target_dir) / Path(raw_path).name).exists():
-                pass
-            else:
-                shutil.move(raw_path, target_dir)
-                nhdf5_path = Path(target_dir) / Path(raw_path).name
-                try:
-                    add_label(db_path, mp4_name, str(nhdf5_path), quality, None)
-                except Exception:
-                    shutil.move(str(nhdf5_path), str(Path(raw_path).parent))
-                    raise
-                bump_db_version()
-        else:
-            new_records = []
-            for record in quantity_records:
-                if (Path(target_dir) / record["hdf5_name"]).exists():
-                    continue
-                else:
-                    shutil.move(Path(record["hdf5_path"]), target_dir)
-                    record = record[:5] + (quality,) + record[6:]
-                    new_records.append(record)
+    if not if_quantity:
+        # 单条模式
+        if mp4_name is None or raw_path is None or target_dir is None or quality is None:
+            st.error("单条模式缺少 mp4_name / raw_path / target_dir / quality")
+            return
+        if not Path(target_dir).exists():
+            st.error(f"文件夹：{target_dir}不存在，请检查")
+            return
+        if not (Path(target_dir) / Path(raw_path).name).exists():
+            shutil.move(raw_path, target_dir)
+            nhdf5_path = Path(target_dir) / Path(raw_path).name
             try:
-                add_labels(db_path, quantity_records, quality, True, target_dir)
+                add_label(db_path, mp4_name, str(nhdf5_path), quality, None)
             except Exception:
-                for record in quantity_records:
-                    shutil.move(Path(target_dir) / record["hdf5_name"], Path(record["hdf5_path"]))
+                shutil.move(str(nhdf5_path), str(Path(raw_path).parent))
                 raise
             bump_db_version()
-            return new_records
-    else:
+        return
+    # 批量模式
+    if target_dir is None or quality is None or quantity_records is None:
+        st.error("批量模式缺少 target_dir / quality / quantity_records")
+        return
+    if not Path(target_dir).exists():
         st.error(f"文件夹：{target_dir}不存在，请检查")
+        return
+    new_records = []
+    for record in quantity_records:
+        if (Path(target_dir) / record["hdf5_name"]).exists():
+            continue
+        else:
+            shutil.move(Path(record["hdf5_path"]), target_dir)
+            record = record[:5] + (quality,) + record[6:]
+            new_records.append(record)
+    try:
+        add_labels(db_path, quantity_records, quality, True, target_dir)
+    except Exception:
+        for record in quantity_records:
+            shutil.move(Path(target_dir) / record["hdf5_name"], Path(record["hdf5_path"]))
+        raise
+    bump_db_version()
+    return new_records
 
-def quality_module(key_name: str, if_session_state: bool = True, session_state: str = "selected", target: sqlite3.Row = None) -> None:
+def quality_module(key_name: str, if_session_state: bool = True, session_state: str = "selected", target: sqlite3.Row | None = None) -> None:
     """渲染质量标记按钮。
 
     支持两种模式：
@@ -172,7 +181,7 @@ def quality_module(key_name: str, if_session_state: bool = True, session_state: 
         None。
     """
 
-    def button_quality(type):
+    def button_quality(type: str, sel: sqlite3.Row):
         if st.button(f"{TYPE_DICT['icon'].get(type)} {type}", key = f"botton_{type}_{key_name}:{sel['mp4_name']}", width = "stretch"):
             target_dir = TYPE_DICT["path"].get(type)
             qualify_and_move(
@@ -191,13 +200,13 @@ def quality_module(key_name: str, if_session_state: bool = True, session_state: 
         return
     colnq1, colnq2 = st.columns(2)
     with colnq1:
-        button_quality("good")
-        button_quality("pending")
+        button_quality("good", sel)
+        button_quality("pending", sel)
     with colnq2:
-        button_quality("bad")
-        button_quality("unlabeled")
+        button_quality("bad", sel)
+        button_quality("unlabeled", sel)
 
-def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = True, session_state: str = "selected", target: sqlite3.Row = None) -> None:
+def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = True, session_state: str = "selected", target: sqlite3.Row | None = None) -> None:
     """渲染属性修改下拉框 + 确认按钮。
 
     支持两种模式：
@@ -262,7 +271,7 @@ def attrs_module(template_attrs: dict, key_name: str, if_session_state: bool = T
                 else:
                     # 清掉 attrs widget 缓存，下次打开从数据库读最新值
                     for wk in list(st.session_state.keys()):
-                        if wk.startswith(f"attrs_{key_name}_"):
+                        if isinstance(wk, str) and wk.startswith(f"attrs_{key_name}_"):
                             del st.session_state[wk]
 
 st.set_page_config(page_title="HDF5 Labeling",
@@ -283,7 +292,7 @@ path_dict = {
 }
 
 st.title("HDF5 Labeling Tool")
-st.write("这是一个用于给 HDF5 数据打标的工具，支持质量分类和属性的标注。")
+st.write("用于给 HDF5 数据打标的工具，支持质量分类和属性的标注。")
 
 # 处理跨 rerun 的 toast 消息
 _toast_msg = pop(S_TOAST, None)
@@ -316,8 +325,8 @@ with st.sidebar:
 
 #————主页面：————（根据需求添加后续标签）
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📁 文件重命名", "🧹 质量检测", "🎬 视频渲染",
-    "🏷️ 视频打标", "📊 数据总览", "⚙️ 配置"
+    "文件重命名", "质量检测", "视频渲染",
+    "视频打标", "📊 数据总览", "⚙️ 配置"
 ])
 
 #————标签页1:文件重命名————
@@ -333,7 +342,41 @@ with tab4:
         set(S_RECORDS, get_list(str(Path(config["paths"]["db_dir"]))))
         set(S_TAB4_VERSION, get(S_DB_VERSION, 0))
     st.subheader("标记记录")
-    col11, col12 = st.columns([1.5,3])
+    # —— 异常文件处理（CSV 自动导入）——
+    with st.expander("⚠️ 异常文件处理（CSV 自动导入）"):
+        csv_path = Path(config["paths"]["csv_dir"]) / "outlier_frames.csv"
+        if not csv_path.exists():
+            st.info("未找到异常报告 CSV，请先在「质量检测」运行检测并导出到配置的 csv_dir\n若已经运行，则说明数据不存在质量问题")
+        else:
+            with open(csv_path, "r", encoding = "utf-8") as f:
+                abnormal = {row["file"] for row in csv.DictReader(f)}
+                placeholder = ", ".join(f"'{n.replace(chr(39), chr(39)*2)}'" for n in abnormal)
+                abnormal_records, _ = query_records(config["paths"]["db_dir"], "*", f"hdf5_name in ({placeholder})")
+            col001, col002 = st.columns(2)
+            with col001:
+                if st.button("扫描文件的同时标红", key = f"{KEY_LABEL}_csv_scan_red"):
+                    set(S_MARKED_RED, get(S_MARKED_RED, frozenset()) | {r["mp4_name"] for r in abnormal_records})
+                    st.rerun()
+                if st.button("全部设置为**bad**质量", key = f"{KEY_LABEL}_qualify_all"):
+                    qualify_and_move(
+                        config["paths"]["db_dir"],
+                        target_dir = config["paths"]["bad_dir"],
+                        quality = "bad",
+                        if_quantity = True,
+                        quantity_records = abnormal_records
+                    )
+                    set(S_MARKED_RED, get(S_MARKED_RED, frozenset()) - {r["mp4_name"] for r in abnormal_records})
+                    st.rerun()
+            with col002:
+                if st.button("取消显示", key = f"{KEY_LABEL}_csv_clear_red"):
+                    set(S_MARKED_RED, frozenset())
+                    st.rerun()
+                marked = get(S_MARKED_RED, frozenset())
+                if marked:
+                    st.markdown("**检测到异常的记录：**")
+                    for name in sorted(marked):
+                        st.markdown(f'<span style="color:red">🔴 {name}</span>', unsafe_allow_html=True)
+        col11, col12 = st.columns([1.5,3])
 #————标签页4-第一列：工作记录选择————
     with col11:
         with st.container(key = f"{KEY_LABEL}_col1_container", border = True):
@@ -351,7 +394,7 @@ with tab4:
                 selected_idx = st.selectbox(
                     "**选择文件**",
                     range(len(records)),                       # 实际选项：0, 1, 2...
-                    format_func=lambda i: f"{records[i]['quality']} - {records[i]['id']}.{records[i]['mp4_name'].replace('.mp4','')}",         # 显示：文件名
+                    format_func=lambda i: f"{'🔴 ' if records[i]['mp4_name'] in get(S_MARKED_RED, frozenset()) else ''}{records[i]['quality']} - {records[i]['id']}.{records[i]['mp4_name'].replace('.mp4','')}",         # 显示：文件名
                     label_visibility="visible",
                     index = get(S_SELECTED_INDEX, 0)
                 )
@@ -386,8 +429,8 @@ with tab4:
                     selected = records[get(S_SELECTED_INDEX, 0)]
                     set(S_SELECTED, selected)
                     st.markdown(f"""
-                                🗿标注状态：**{'✅' if selected['quality']=='good' else '❌' if selected['quality']=='bad' else '☑️'}-{selected['quality']}**\n
-                                🗿名称：**{selected['hdf5_name']}**
+                                标注状态：**{'✅' if selected['quality']=='good' else '❌' if selected['quality']=='bad' else '☑️'}-{selected['quality']}**\n
+                                名称：**{selected['hdf5_name']}**
                                 """)
 #————标签页4-第一列：属性设置-质量分类————
         if next_flag:
@@ -415,17 +458,22 @@ with tab4:
                 col121, col122 = st.columns([1,1])
                 with col121:
                     first_frame = get_frame(video_path,0)
-                    st.image(first_frame, caption = "首帧", width="stretch")
+                    if first_frame is not None:
+                        st.image(first_frame, caption = "首帧", width="stretch")
+                    else:
+                        st.info("无法读取首帧")
                 with col122:
                     last_frame = get_frame(video_path, n_frames - 1)
-                    st.image(last_frame, caption = "末帧", width="stretch")
+                    if last_frame is not None:
+                        st.image(last_frame, caption = "末帧", width="stretch")
+                    else:
+                        st.info("无法读取末帧")
 #————标签页4-第二列：工作区域-视频区域
         with st.container(key = f"{KEY_LABEL}_col2_videobox", border = next_flag):
             sel = get(S_SELECTED)
             if sel:
                 st.markdown(f"**{(sel['mp4_path'].split('/'))[-1]}**")
                 st.video(sel['mp4_path'])
-
 
 ##————标签页5:数据总览操作界面————
 with tab5:
@@ -436,6 +484,8 @@ with tab5:
     with col21:
         with st.container(key = f"{KEY_OVERVIEW}_sql_choose_container", border = True):
             st.markdown("**自定义查询**")
+            all_columns: dict[str, str] = {}
+            selected_cols: list[str] = []
             if _ENABLE_SELECT_COLUMNS:
                 all_columns = {
                     "ID": "id", "HDF5名": "hdf5_name", "HDF5路径": "hdf5_path",
@@ -471,11 +521,10 @@ with tab5:
             col211, col212 = st.columns(2)
             with col211:
                 if st.button("执行查询", key=f"{KEY_OVERVIEW}_query", width="stretch"):
+                    where_condition: str | None = None
+                    col_names = "*"
                     if _ENABLE_SELECT_COLUMNS:
                         col_names = ", ".join(all_columns[c] for c in selected_cols) if selected_cols else "*"
-                    else:
-                        col_names = "*"
-                        where_condition = None
                     if sql_where.strip():
                         where_condition = translate_where(sql_where.strip(), attr_map)
                     st.toast(f"执行 SQL: SELECT {col_names} FROM label WHERE {where_condition}")
@@ -512,7 +561,6 @@ with tab5:
                     elif full_selected:
                         qualify_and_move(
                             config["paths"]["db_dir"],
-                            "", "",          # mp4_name / raw_path：批量模式下未使用，占位
                             target_dir = config["paths"][f"{batch_quality}_dir" if batch_quality == "good" or batch_quality == "bad" else "raw_dir"],
                             quality = batch_quality,
                             if_quantity = True,
@@ -782,5 +830,5 @@ with tab6:
                 except:
                     st.error("文件解析失败")
 
-with st.expander("🔍 调试：查看 session_state"):
-    st.json(st.session_state.to_dict())
+# with st.expander("🔍 调试：查看 session_state"):
+#     st.json(st.session_state.to_dict())

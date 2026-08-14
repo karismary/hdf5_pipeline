@@ -13,6 +13,7 @@ DEFAULT_PATHS = {
     "mp4_dir":  "./data_workspace/2_input_mp4",
     "good_dir": "./data_workspace/3_good_quality",
     "bad_dir":  "./data_workspace/4_bad_quality",
+    "csv_dir":  "./data_workspace/5_outlier_reports",
 }
 
 
@@ -34,7 +35,7 @@ def get_default_config() -> Dict[str, Any]:
 
 # ---- 第三步：load_config ----
 
-def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+def load_config(config_path: Optional[str | Path] = None) -> Dict[str, Any]:
     """加载配置文件，不存在则返回默认值。
 
     文件存在时读取全部字段（paths + custom_cols），

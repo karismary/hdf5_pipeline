@@ -38,6 +38,10 @@ SPIRIT_ACTION_COLS = [
 ]
 SPIRIT_STATE_COLS = [c.replace("_cmd_", "_state_") for c in SPIRIT_ACTION_COLS]
 
+# 浏览按钮只支持选目录，导出/跳过功能据此把目录解析为默认文件名
+DEFAULT_QUALITY_CSV = "outlier_frames.csv"
+DEFAULT_VALIDATION_REPORT = "spirit_validation_report.txt"
+
 #左臂7×True, 左爪 False, 右臂7×True, 右爪 False, 腰6×True
 DEFAULT_DELTA_MASK_22: List[bool] = [
     True, True, True, True, True, True, True,

@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -146,6 +147,7 @@ def convert_one_instance(
     link_videos: bool = True,
     task_index_map: dict | None = None,
     out_records: list | None = None,
+    skip_episodes: set[Path] | None = None,
 ) -> tuple[int, int, int]:
     """转换单个实例目录（含 event_log.jsonl 的数据目录）。
 
@@ -156,6 +158,7 @@ def convert_one_instance(
         link_videos: True 用 Path.symlink_to，False 用 shutil.copy2。
         task_index_map: {task: task_index} 共享注册表（跨实例累积）。
         out_records: 接收每集 {"episode_index", "length", "task", "stats"} 记录的列表。
+        skip_episodes: 要跳过的源 parquet 文件绝对路径集合（如检测文档判定的问题文件）。
 
     Returns:
         (converted, skipped, video_count)
@@ -166,6 +169,8 @@ def convert_one_instance(
         task_index_map = {}
     if out_records is None:
         out_records = []
+    if skip_episodes is None:
+        skip_episodes = set()
 
     episodes_meta = parse_episodes(instance_dir / "event_log.jsonl")
     fallback = _load_instructions(instance_dir)
@@ -185,6 +190,9 @@ def convert_one_instance(
         src_idx = episode_number(ep_file)
         meta = episodes_meta.get(src_idx)
         if meta and meta["is_mistake"]:
+            skipped += 1
+            continue
+        if ep_file.resolve() in skip_episodes:
             skipped += 1
             continue
 
@@ -342,19 +350,25 @@ def _write_meta(
             )
 
 
-def convert_spirit(raw_dir: str | Path, out_dir: str | Path, link_videos: bool = True) -> dict:
+def convert_spirit(raw_dir: str | Path, out_dir: str | Path, link_videos: bool = True,
+                   skip_episodes: set[Path] | None = None) -> dict:
     """批量转换 raw_dir 下所有 spirit 实例，输出标准 LeRobot v2.1 数据集。
 
     raw_dir 下所有含 event_log.jsonl 的目录视为实例（rglob 递归发现）；
     若 raw_dir 本身就是实例目录也兼容。episode 编号跨实例顺序续接。
 
+    **不清空输出目录**：在 ``out_dir`` 下新建「实例名_时间戳」子目录作为本次
+    数据集根目录，既有文件不动；同名冲突时追加 ``_2``、``_3`` 序号。
+
     Args:
         raw_dir: 原始数据根目录。
-        out_dir: 输出数据集根目录（存在则先 rmtree 清理，不静默覆盖）。
+        out_dir: 输出目录（在其下新建「实例名_时间戳」子目录写入结果）。
         link_videos: True 用 Path.symlink_to，False 用 shutil.copy2。
+        skip_episodes: 要跳过的源 parquet 文件绝对路径集合（如检测文档判定的问题文件）。
 
     Returns:
-        {"converted": n, "skipped": m, "videos": k}
+        {"converted": n, "skipped": m, "videos": k,
+         "out_dir": 本次实际输出数据集根目录（str）}
     """
     raw_dir = Path(raw_dir)
     out_dir = Path(out_dir)
@@ -371,9 +385,14 @@ def convert_spirit(raw_dir: str | Path, out_dir: str | Path, link_videos: bool =
 
     image_height, image_width = _camera_shape(instance_dirs[0])
 
-    if out_dir.exists():
-        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    out_root = out_dir / f"{raw_dir.name}_{stamp}"
+    n = 2
+    while out_root.exists():
+        out_root = out_dir / f"{raw_dir.name}_{stamp}_{n}"
+        n += 1
+    out_root.mkdir()
 
     task_index_map = {}
     out_records = []
@@ -382,11 +401,12 @@ def convert_spirit(raw_dir: str | Path, out_dir: str | Path, link_videos: bool =
     for inst in instance_dirs:
         c, s, v = convert_one_instance(
             inst,
-            out_dir,
+            out_root,
             out_offset,
             link_videos,
             task_index_map=task_index_map,
             out_records=out_records,
+            skip_episodes=skip_episodes,
         )
         converted += c
         skipped += s
@@ -398,6 +418,11 @@ def convert_spirit(raw_dir: str | Path, out_dir: str | Path, link_videos: bool =
             "No episode converted: all episodes are mistakes or no data found."
         )
 
-    _write_meta(out_dir, task_index_map, out_records, video_count, image_height, image_width)
+    _write_meta(out_root, task_index_map, out_records, video_count, image_height, image_width)
 
-    return {"converted": converted, "skipped": skipped, "videos": video_count}
+    return {
+        "converted": converted,
+        "skipped": skipped,
+        "videos": video_count,
+        "out_dir": str(out_root),
+    }

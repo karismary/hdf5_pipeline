@@ -91,8 +91,8 @@ def scan_pairs(db_path: str, mp4_dir: str, raw_dir: str) -> int:
         int: 新注册的文件对数。
     """
     init_db(db_path)
-    mp4_list = set(get_sorted_files(Path(mp4_dir), ".mp4", 1))
-    raw_set = set(get_sorted_files(Path(raw_dir), ".hdf5", 1))
+    mp4_list = set(get_sorted_files(mp4_dir, [".mp4"], 1))
+    raw_set = set(get_sorted_files(raw_dir, [".hdf5"], 1))
     pairs = sorted(m for m in mp4_list if m.replace(".mp4", ".hdf5") in raw_set)
 
     conn = _connect(db_path)
@@ -117,7 +117,7 @@ def scan_pairs(db_path: str, mp4_dir: str, raw_dir: str) -> int:
 
     return len(new_pairs)
 
-def add_label(db_path: str, mp4_name: str, hdf5_path: str = None, quality: str = None, attr: dict = None) -> None:
+def add_label(db_path: str, mp4_name: str, hdf5_path: str | None = None, quality: str | None = None, attr: dict | None = None) -> None:
     """更新一个视频文件的打标结果，单次调用。
 
     根据 mp4_name 定位记录，只更新传入的字段，不传的保持不变。
@@ -158,7 +158,7 @@ def add_label(db_path: str, mp4_name: str, hdf5_path: str = None, quality: str =
     conn.commit()
     conn.close()
 
-def add_labels(db_path: str, records: list, quality: str = None, if_qualify: bool = False, target_dir: str = None, attr: dict = None) -> None:
+def add_labels(db_path: str, records: list, quality: str | None = None, if_qualify: bool = False, target_dir: str | None = None, attr: dict | None = None) -> None:
     """批量更新多条记录的打标结果，单连接单事务执行。
 
     对 records 中每条记录按 mp4_name 定位，只更新传入的字段，不传的保持不变。
@@ -204,6 +204,8 @@ def add_labels(db_path: str, records: list, quality: str = None, if_qualify: boo
             clause_list.append(value)
         conn.executemany(sqls, clause_list)
     else:
+        if target_dir is None:
+            return
         sql = f"UPDATE label SET {', '.join(set_clauses)}, hdf5_path = ? WHERE mp4_name = ?"
         for record in records:
             if record["quality"] == quality:

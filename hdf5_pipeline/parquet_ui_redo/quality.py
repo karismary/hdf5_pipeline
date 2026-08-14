@@ -26,7 +26,7 @@ def _find_instance_dirs(raw_dir: str | Path) -> list[Path]:
         return [raw_dir]
     instance_dirs = sorted({p.parent for p in raw_dir.rglob("event_log.jsonl")})
     if not instance_dirs:
-        raise FileNotFoundError(f"No event_log.jsonl found under {raw_dir}")
+        raise FileNotFoundError(f"{raw_dir} 下未找到 event_log.jsonl（无有效实例目录）")
     return instance_dirs
 
 

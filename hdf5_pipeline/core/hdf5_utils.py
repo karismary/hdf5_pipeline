@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Literal, overload, cast
 import h5py
 import numpy as np
 import pyarrow.parquet as pq
@@ -38,7 +38,13 @@ def get_hdf5_files(folder: str, format: str = "hdf5") -> List[Path]:
 
     return sorted([f for f in dir_path.rglob(f"*{file_type}")])
 
-def get_sorted_files(folder: str, file_type: list, return_type: int) -> List[Path]:
+@overload
+def get_sorted_files(folder: str, file_type: list, return_type: Literal[0]) -> List[Path]: ...
+
+@overload
+def get_sorted_files(folder: str, file_type: list, return_type: Literal[1]) -> List[str]: ...
+
+def get_sorted_files(folder: str, file_type: list, return_type: int) -> List[Path] | List[str]:
     """递归收集目录下所有指定类型文件，按文件名自然排序后返回。
 
     使用 rglob 搜索，会递归所有子目录。
@@ -71,7 +77,8 @@ def get_sorted_files(folder: str, file_type: list, return_type: int) -> List[Pat
         if return_type == 0:
             return sorted(all_files, key=lambda p: natural_sort_key(p.name))
         else:
-            return sorted([f.name for f in all_files], key=lambda p: natural_sort_key(p))
+            names: list[str] = [f.name for f in all_files]
+            return sorted(names, key=lambda p: natural_sort_key(p))
 
 def get_hdf5_frame_count(h5_file: str, format: str = "hdf5"):
     """获取数据文件的帧数，兼容 HDF5 与 LeRobot Parquet 两种格式。
@@ -96,10 +103,10 @@ def get_hdf5_frame_count(h5_file: str, format: str = "hdf5"):
                 pix = "observation/pixels"
             else:
                 pix = "pixels"
-            cameras = list(f[pix].keys())
+            cameras = list(cast(h5py.Group, f[pix]).keys())
             if not cameras:
                 return None
-            return min(f[f"{pix}/{c}"].shape[0] for c in cameras)
+            return min(np.asarray(f[f"{pix}/{c}"]).shape[0] for c in cameras)
     except Exception:
         return None
 
@@ -136,7 +143,7 @@ def normalize_image_array(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
-def load_images_from_hdf5(path: str) -> Dict[str, np.ndarray]:
+def load_images_from_hdf5(path: str) -> Tuple[Dict[str, np.ndarray], int]:
     """从 HDF5 文件加载所有相机图像。
 
     Args:
@@ -147,12 +154,12 @@ def load_images_from_hdf5(path: str) -> Dict[str, np.ndarray]:
     """
 
     with h5py.File(path, "r") as root:
-        ts = root["timestamps"][:] if "timestamp" in root else None
+        ts = np.asarray(root["timestamps"]) if "timestamps" in root else None
         pix_group = "observations/pixels" if "observations/pixels" in root else "pixels"
-        cams = list(root[pix_group].keys())
+        cams = list(cast(h5py.Group, root[pix_group]).keys())
         imgs = {}
         for c in cams:
-            raw_array = root[f"{pix_group}/{c}"][:]
+            raw_array = np.asarray(root[f"{pix_group}/{c}"])
             imgs[c] = normalize_image_array(raw_array)
         if ts is not None and len(ts) > 1:
             dt = ts[1] - ts[0]
@@ -175,7 +182,7 @@ def load_actions_from_hdf5(path: str, n_frames: int) -> np.ndarray:
     """
 
     with h5py.File(path, "r") as root:
-        act = root["action"][:n_frames] if "action" in root else root["actions"][:n_frames]
+        act = np.asarray(root["action"])[:n_frames] if "action" in root else np.asarray(root["actions"])[:n_frames]
 
     return act
 
@@ -192,9 +199,9 @@ def load_joints_from_hdf5(path: str, n_frames: int) -> Tuple[Optional[np.ndarray
     """
 
     with h5py.File(path, "r") as root:
-        left_j = root["observations/left_arm_joints"][:n_frames] if "observations/left_arm_joints" in root else None
-        right_j = root["observations/right_arm_joints"][:n_frames] if "observations/right_arm_joints" in root else None
- 
+        left_j = np.asarray(root["observations/left_arm_joints"])[:n_frames] if "observations/left_arm_joints" in root else None
+        right_j = np.asarray(root["observations/right_arm_joints"])[:n_frames] if "observations/right_arm_joints" in root else None
+
     return left_j, right_j
 
 
@@ -231,14 +238,14 @@ def load_raw_30dim(path: str) -> Tuple[np.ndarray, np.ndarray]:
         (action_30, state_30) — shape 均为 (T, 30)
     """
     with h5py.File(path, "r") as f:
-        action_30 = f["actions"][:]
+        action_30 = np.asarray(f["actions"])
 
-        left_ee = f["observations/left_end_effector_pose"][:]
-        right_ee = f["observations/right_end_effector_pose"][:]
-        left_j = f["observations/left_arm_joints"][:]
-        right_j = f["observations/right_arm_joints"][:]
-        left_g = f["observations/left_gripper_state"][:]
-        right_g = f["observations/right_gripper_state"][:]
+        left_ee = np.asarray(f["observations/left_end_effector_pose"])
+        right_ee = np.asarray(f["observations/right_end_effector_pose"])
+        left_j = np.asarray(f["observations/left_arm_joints"])
+        right_j = np.asarray(f["observations/right_arm_joints"])
+        left_g = np.asarray(f["observations/left_gripper_state"])
+        right_g = np.asarray(f["observations/right_gripper_state"])
 
         state_30 = np.concatenate(
             [left_ee, right_ee, left_j, right_j, left_g, right_g], axis=1

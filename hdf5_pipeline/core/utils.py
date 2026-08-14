@@ -23,8 +23,34 @@ def pick_folder() -> str:
 
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0 or not r.stdout.strip():
-        return
+        return ""
 
     folder = r.stdout.strip()
 
     return folder
+
+def pick_file() -> str:
+    """跨平台文件选择器，返回选中文件路径或空字符串。
+
+    与 ``pick_folder`` 同理，但弹窗选择单个文件（供读取已存在的检测文档等）。
+
+    Returns:
+        str: 选中的文件绝对路径。用户取消时返回空字符串。
+    """
+    s = platform.system()
+
+    if s == "Darwin":
+        cmd = ["osascript", "-e", 'POSIX path of (choose file)']
+    elif s == "Windows":
+        cmd = ["powershell", "-Command",
+               'Add-Type -AssemblyName System.Windows.Forms;'
+               '$f=New-Object System.Windows.Forms.OpenFileDialog;'
+               'if($f.ShowDialog()-eq"OK"){$f.FileName}']
+    else:
+        cmd = ["zenity", "--file-selection"]
+
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        return ""
+
+    return r.stdout.strip()

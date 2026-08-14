@@ -2,6 +2,7 @@ import h5py
 import numpy as np
 import pyarrow.parquet as pq
 from pathlib import Path
+from typing import cast
 
 def validate_file(file_path: str) -> tuple[bool, list[str]]:
     """校验单个数据文件（HDF5 / Parquet）的结构完整性。
@@ -31,12 +32,12 @@ def validate_file(file_path: str) -> tuple[bool, list[str]]:
                         ok = False
                     else:
                         pix = "observations/pixels" if "observations/pixels" in f else "pixels"
-                        cams = list(f[pix].keys())
+                        cams = list(cast(h5py.Group, f[pix]).keys())
                         if not cams:
                             errors.append(f"{file_path}：图像组为空\n")
                             ok = False
                         for cam in cams:
-                            n_frames = f[f"{pix}/{cam}"].shape[0]
+                            n_frames = cast(h5py.Dataset, f[f"{pix}/{cam}"]).shape[0]
                             if n_frames < 1:
                                 errors.append(f"{file_path}：未采集到数据,帧数为 0\n")
                                 ok = False
